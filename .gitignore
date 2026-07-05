@@ -1,0 +1,27 @@
+# Environment
+.env
+
+# Data
+data/
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+.pytest_cache/
+
+# ML artifacts
+*.joblib
+*.pkl
+
+# Notebooks checkpoint
+.ipynb_checkpoints/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
