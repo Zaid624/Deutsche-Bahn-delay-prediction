@@ -102,15 +102,30 @@ def load_dwd_station_list(param_info: dict) -> pd.DataFrame:
     """
     folder = param_info["folder"]
     code = param_info["code"]
-    url = f"{DWD_BASE}/{folder}/historical/{code}_Stundenwerte_Beschreibung_Stationen.txt"
+    url = (
+        f"{DWD_BASE}/{folder}/historical/{code}_Stundenwerte_Beschreibung_Stationen.txt"
+    )
     print(f"  Downloading station list from {url}")
 
-    col_names = ["station_id", "von_datum", "bis_datum", "height",
-                 "latitude", "longitude", "name", "state", "abgabe"]
+    col_names = [
+        "station_id",
+        "von_datum",
+        "bis_datum",
+        "height",
+        "latitude",
+        "longitude",
+        "name",
+        "state",
+        "abgabe",
+    ]
 
     df = pd.read_fwf(
-        url, encoding="latin1", skiprows=[0, 1], header=None,
-        names=col_names, na_values=["-999"],
+        url,
+        encoding="latin1",
+        skiprows=[0, 1],
+        header=None,
+        names=col_names,
+        na_values=["-999"],
     )
     df = df.dropna(subset=["station_id"])
     df["station_id"] = df["station_id"].astype(str).str.strip()
@@ -135,23 +150,31 @@ def find_nearest_station(lat: float, lon: float, stations_df: pd.DataFrame) -> s
     # Calculate distance and prefer stations that cover our full delay date range
     dlat = recent["latitude"] - lat
     dlon = recent["longitude"] - lon
-    recent["dist_deg"] = (dlat ** 2 + dlon ** 2) ** 0.5
+    recent["dist_deg"] = (dlat**2 + dlon**2) ** 0.5
 
     # Add a penalty to stations whose bis_datum ends before our target end
     # This pushes us toward stations that cover the full period
     recent["bis_numeric"] = pd.to_numeric(recent["bis_datum"], errors="coerce")
     target_end = 20251130
     # Stations that don't cover our full range get a distance penalty
-    recent["penalty"] = ((target_end - recent["bis_numeric"]).clip(lower=0) / 100000) * 2.0
+    recent["penalty"] = (
+        (target_end - recent["bis_numeric"]).clip(lower=0) / 100000
+    ) * 2.0
     recent["score"] = recent["dist_deg"] + recent["penalty"]
 
-    idx = recent["score"].idxmin()
-    nearest = recent.loc[idx]
+    # Use numeric indexing to avoid pandas issues
+    import numpy as np
+
+    score_array = np.array(recent["score"].tolist())
+    idx = int(score_array.argmin())
+    nearest = recent.iloc[idx]
     sid = str(int(nearest["station_id"]))
     return sid.zfill(5)  # DWD uses 5-digit IDs with leading zeros
 
 
-def get_station_file_url(param_info: dict, station_id: str, subdir: str = "historical") -> str:
+def get_station_file_url(
+    param_info: dict, station_id: str, subdir: str = "historical"
+) -> str:
     """
     Build the URL for the zip file for a given station, parameter, and subdirectory.
     Subdir can be 'historical' or 'recent'.
@@ -200,7 +223,9 @@ def _parse_zip_file(zf: zipfile.ZipFile, station_id: str) -> pd.DataFrame:
     csv_files = [f for f in zf.namelist() if f.endswith(".txt") or f.endswith(".csv")]
     csv_files = [f for f in csv_files if "produkt" in f.lower()]
     if not csv_files:
-        csv_files = [f for f in zf.namelist() if f.endswith(".txt") or f.endswith(".csv")]
+        csv_files = [
+            f for f in zf.namelist() if f.endswith(".txt") or f.endswith(".csv")
+        ]
         csv_files = [f for f in csv_files if not f.startswith("Metadaten")]
     if not csv_files:
         raise FileNotFoundError(f"No data file found in zip for station {station_id}")
@@ -214,7 +239,9 @@ def _parse_zip_file(zf: zipfile.ZipFile, station_id: str) -> pd.DataFrame:
     # Parse date from MESS_DATUM (format: YYYYMMDDHH)
     dt_col = "MESS_DATUM" if "MESS_DATUM" in df.columns else None
     if dt_col is None:
-        date_cols = [c for c in df.columns if "ende" in c.lower() or "zeit" in c.lower()]
+        date_cols = [
+            c for c in df.columns if "ende" in c.lower() or "zeit" in c.lower()
+        ]
         dt_col = date_cols[0] if date_cols else df.columns[1]
 
     df[dt_col] = df[dt_col].astype(str).str.strip()
@@ -238,15 +265,11 @@ def download_station_data(param_info: dict, station_id: str) -> pd.DataFrame:
     Checks both 'historical' and 'recent' directories and concatenates them.
     Returns a DataFrame with date, hour, and weather measurements.
     """
-    folder = param_info["folder"]
-    code = param_info["code"]
-
     # Download from historical directory
     historical_url = get_station_file_url(param_info, station_id)
     df_hist = _download_zip_and_parse(historical_url, station_id)
 
     # Optionally download from 'recent' directory (covers last ~2 years)
-    recent_url = None
     try:
         recent_url = get_station_file_url(param_info, station_id, subdir="recent")
         df_recent = _download_zip_and_parse(recent_url, station_id)
@@ -277,39 +300,55 @@ def download_all_weather() -> pd.DataFrame:
             param_code = param_info["code"]
 
             # Check cache first
-            cache_path = CACHE_DIR / f"{param_code}_{coords['lat']}_{coords['lon']}.parquet"
+            cache_path = (
+                CACHE_DIR / f"{param_code}_{coords['lat']}_{coords['lon']}.parquet"
+            )
             if cache_path.exists():
                 df_param = pd.read_parquet(cache_path)
                 print(f"  Cached {param_name} ({len(df_param)} rows)")
             else:
                 try:
-                    stations_df = load_dwd_station_list(param_info)
-                    station_id = find_nearest_station(coords["lat"], coords["lon"], stations_df)
-                    df_param = download_station_data(param_info, station_id)
+                    stations_df_main = load_dwd_station_list(param_info)
+                    station_id_main = find_nearest_station(
+                        coords["lat"], coords["lon"], stations_df_main
+                    )
+                    df_param = download_station_data(param_info, station_id_main)
                 except Exception as e:
-                    print(f"  Failed for nearest station {station_id}: {e}")
+                    print(f"  Failed for nearest station: {e}")
                     # Try nearby stations in order of distance
-                    stations_df = stations_df.dropna(subset=["latitude", "longitude", "bis_datum"])
-                    recent = stations_df[stations_df["bis_datum"].astype(str).str[:4] >= "2024"].copy()
-                    if len(recent) > 0:
-                        dlat = recent["latitude"] - coords["lat"]
-                        dlon = recent["longitude"] - coords["lon"]
-                        recent["dist"] = (dlat ** 2 + dlon ** 2) ** 0.5
-                        candidates = recent.sort_values("dist")
-                        for _, row in candidates.iterrows():
-                            sid = str(int(row["station_id"])).zfill(5)
-                            if sid == station_id:
-                                continue
-                            try:
-                                df_param = download_station_data(param_info, sid)
-                                print(f"  Using fallback station {sid} ({row['name']})")
-                                break
-                            except Exception:
+                    try:
+                        stations_df_copy = stations_df_main.dropna(
+                            subset=["latitude", "longitude", "bis_datum"]
+                        )
+                        recent = stations_df_copy[
+                            stations_df_copy["bis_datum"].astype(str).str[:4] >= "2024"
+                        ].copy()
+                        if len(recent) > 0:
+                            dlat = recent["latitude"] - coords["lat"]
+                            dlon = recent["longitude"] - coords["lon"]
+                            recent["dist"] = (dlat**2 + dlon**2) ** 0.5
+                            candidates = recent.sort_values("dist").reset_index(
+                                drop=True
+                            )
+                            for _, row in candidates.iterrows():
+                                sid = str(int(row["station_id"])).zfill(5)
+                                if sid == station_id_main:
+                                    continue
+                                try:
+                                    df_param = download_station_data(param_info, sid)
+                                    print(
+                                        f"  Using fallback station {sid} ({row['name']})"
+                                    )
+                                    break
+                                except Exception:
+                                    continue
+                            else:
+                                print(f"  No fallback station found for {param_name}")
                                 continue
                         else:
-                            print(f"  No fallback station found for {param_name}")
                             continue
-                    else:
+                    except Exception:
+                        print(f"  No fallback available for {param_name}")
                         continue
 
                 # Rename columns
@@ -339,11 +378,19 @@ def download_all_weather() -> pd.DataFrame:
             station_weather = station_weather[
                 (station_weather["date"] >= pd.Timestamp(DELAY_START))
                 & (station_weather["date"] <= pd.Timestamp(DELAY_END))
-            ]
+            ].copy()
             # Forward-fill weather values within each day (weather changes slowly)
-            station_weather = station_weather.sort_values(["date", "hour"])
-            weather_cols = [c for c in station_weather.columns if c not in ("date", "hour", "station_name")]
-            station_weather[weather_cols] = station_weather.groupby("date")[weather_cols].transform(lambda g: g.ffill())
+            station_weather = station_weather.sort_values(["date", "hour"]).reset_index(
+                drop=True
+            )
+            weather_cols = [
+                c
+                for c in station_weather.columns
+                if c not in ("date", "hour", "station_name")
+            ]
+            station_weather[weather_cols] = station_weather.groupby("date")[
+                weather_cols
+            ].transform(lambda g: g.ffill())
             all_weather.append(station_weather)
 
     if not all_weather:

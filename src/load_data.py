@@ -27,9 +27,7 @@ from tqdm import tqdm
 # Add project root to path so src imports work
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from src.database import engine, SessionLocal, init_db
-from src.models import TrainDelay
-
+from src.database import engine, init_db
 
 # ---------------------------------------------------------------------------
 # Configuration
@@ -69,12 +67,12 @@ BATCH_SIZE = 5000  # rows per INSERT
 # ---------------------------------------------------------------------------
 # Step 1: Load & filter each monthly file
 # ---------------------------------------------------------------------------
-def load_and_filter(filepath: Path) -> pd.DataFrame:
+def load_and_filter(filepath: Path) -> tuple[pd.DataFrame, int]:
     """Read one parquet file, keep only ICE + top 10 stations, exclude canceled."""
-    df = pd.read_parquet(filepath)
+    df_raw: pd.DataFrame = pd.read_parquet(filepath)
 
     # Keep only our columns of interest
-    df = df[COLUMNS_TO_KEEP]
+    df = df_raw[COLUMNS_TO_KEEP].copy()
 
     # Scope: ICE trains only
     df = df[df["train_type"] == "ICE"].copy()
@@ -84,11 +82,11 @@ def load_and_filter(filepath: Path) -> pd.DataFrame:
 
     # Exclude canceled trips
     before = len(df)
-    df = df[~df["is_canceled"]].copy()
-    after = len(df)
+    df_filtered: pd.DataFrame = df[~df["is_canceled"]].copy()
+    after = len(df_filtered)
     canceled_count = before - after
 
-    return df, canceled_count
+    return df_filtered, canceled_count
 
 
 # ---------------------------------------------------------------------------
@@ -108,7 +106,9 @@ def run_quality_checks(df: pd.DataFrame, source_label: str) -> dict:
     for col in ["station_name", "train_number", "delay_in_min", "time"]:
         missing = df[col].isna().sum()
         if missing:
-            raise ValueError(f"{source_label}: Column '{col}' has {missing} missing values.")
+            raise ValueError(
+                f"{source_label}: Column '{col}' has {missing} missing values."
+            )
     # Arrival/departure times are allowed to be missing (~10% of rows)
     checks["missing_arrival_planned"] = int(df["arrival_planned_time"].isna().sum())
     checks["missing_departure_planned"] = int(df["departure_planned_time"].isna().sum())
@@ -117,7 +117,9 @@ def run_quality_checks(df: pd.DataFrame, source_label: str) -> dict:
     extreme_late = (df["delay_in_min"] > 400).sum()
     extreme_early = (df["delay_in_min"] < -60).sum()
     if extreme_late > 0 or extreme_early > 0:
-        print(f"  [!] {source_label}: {extreme_late} rows >400 min late, {extreme_early} rows <-60 min early (keeping them)")
+        print(
+            f"  [!] {source_label}: {extreme_late} rows >400 min late, {extreme_early} rows <-60 min early (keeping them)"
+        )
     checks["extreme_delays"] = extreme_late + extreme_early
 
     return checks
@@ -189,7 +191,9 @@ def main():
     df_all = pd.concat(all_dfs, ignore_index=True)
     print(f"\n  Total rows after filtering: {len(df_all):,}")
     print(f"  Canceled rows excluded: {total_canceled:,}")
-    print(f"  Stations in scope: {df_all['station_name'].nunique()} / {len(TOP_10_STATIONS)}")
+    print(
+        f"  Stations in scope: {df_all['station_name'].nunique()} / {len(TOP_10_STATIONS)}"
+    )
 
     stations_found = set(df_all["station_name"].unique())
     missing_stations = set(TOP_10_STATIONS) - stations_found
@@ -200,11 +204,17 @@ def main():
     print("\n[3] Data quality summary (across all months):")
     print(f"  Rows: {len(df_all):,}")
     print(f"  Columns: {list(df_all.columns)}")
-    print(f"  Delay range: [{df_all['delay_in_min'].min()}, {df_all['delay_in_min'].max()}]")
+    print(
+        f"  Delay range: [{df_all['delay_in_min'].min()}, {df_all['delay_in_min'].max()}]"
+    )
     print(f"  Median delay: {df_all['delay_in_min'].median():.1f} min")
     print(f"  % delayed > 5 min: {(df_all['delay_in_min'] > 5).mean() * 100:.1f}%")
-    print(f"  Missing arrival_planned_time: {df_all['arrival_planned_time'].isna().sum():,} / {len(df_all):,}")
-    print(f"  Missing departure_planned_time: {df_all['departure_planned_time'].isna().sum():,} / {len(df_all):,}")
+    print(
+        f"  Missing arrival_planned_time: {df_all['arrival_planned_time'].isna().sum():,} / {len(df_all):,}"
+    )
+    print(
+        f"  Missing departure_planned_time: {df_all['departure_planned_time'].isna().sum():,} / {len(df_all):,}"
+    )
 
     # 4. Clear existing data and re-insert
     print(f"\n[4] Inserting into Supabase (batches of {BATCH_SIZE:,})...")

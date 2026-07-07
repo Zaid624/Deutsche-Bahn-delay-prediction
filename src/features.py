@@ -36,11 +36,17 @@ import sys
 from pathlib import Path
 
 import pandas as pd
-from holidays import country_holidays
+
+try:
+    import holidays  # type: ignore
+
+    country_holidays = holidays.country_holidays
+except ImportError:
+    # Fallback if holidays package not installed
+    country_holidays = None  # type: ignore
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from src.database import engine
-
 
 # ---------------------------------------------------------------------------
 # Configuration
@@ -49,17 +55,27 @@ TARGET_COL = "delay_in_min"
 FEATURE_OUTPUT = Path("data/features_v2.parquet")
 
 # Holidays observed nationwide in Germany (all states)
-HOLIDAY_DE = country_holidays("DE", years=range(2024, 2027))
+if country_holidays is not None:
+    HOLIDAY_DE = country_holidays("DE", years=range(2024, 2027))
+else:
+    HOLIDAY_DE = set()  # Empty set if holidays not available
 
 # Weather columns to merge
 WEATHER_COLS = [
-    "temperature_c", "humidity_pct", "precipitation_mm",
-    "wind_speed_ms", "wind_direction",
-    "sunshine_minutes", "cloud_cover_pct", "pressure_hpa",
+    "temperature_c",
+    "humidity_pct",
+    "precipitation_mm",
+    "wind_speed_ms",
+    "wind_direction",
+    "sunshine_minutes",
+    "cloud_cover_pct",
+    "pressure_hpa",
 ]
 
 
-def engineer_features(df: pd.DataFrame, weather_df: pd.DataFrame = None) -> pd.DataFrame:
+def engineer_features(
+    df: pd.DataFrame, weather_df: pd.DataFrame | None = None
+) -> pd.DataFrame:
     """
     Add time-based, cascading, and weather features.
     Optionally merges DWD weather data on (station_name, date, hour).
@@ -83,17 +99,23 @@ def engineer_features(df: pd.DataFrame, weather_df: pd.DataFrame = None) -> pd.D
     ).astype(int)
 
     # -- Season --
-    features["season"] = features["month"].map(
-        {12: "winter", 1: "winter", 2: "winter",
-         3: "spring", 4: "spring", 5: "spring",
-         6: "summer", 7: "summer", 8: "summer",
-         9: "autumn", 10: "autumn", 11: "autumn"}
-    )
+    def map_season(month: int) -> str:
+        """Map month number to season."""
+        if month in (12, 1, 2):
+            return "winter"
+        elif month in (3, 4, 5):
+            return "spring"
+        elif month in (6, 7, 8):
+            return "summer"
+        else:
+            return "autumn"
+
+    features["season"] = features["month"].apply(map_season)
 
     # -- German public holidays --
-    features["is_holiday"] = (
-        local_time.dt.date.map(lambda d: d in HOLIDAY_DE)
-    ).astype(int)
+    features["is_holiday"] = (local_time.dt.date.map(lambda d: d in HOLIDAY_DE)).astype(
+        int
+    )
 
     # ---------------------------------------------------------------
     # HIGH-IMPACT FEATURE 1: Cascading delay from previous station
@@ -117,7 +139,8 @@ def engineer_features(df: pd.DataFrame, weather_df: pd.DataFrame = None) -> pd.D
     # ---------------------------------------------------------------
     # HIGH-IMPACT FEATURE 2: Train frequency at (station, hour)
     # ---------------------------------------------------------------
-    freq = features.groupby(["station_name", "hour"]).size().rename("train_count")
+    freq = features.groupby(["station_name", "hour"]).size()
+    freq.name = "train_count"
     features = features.join(freq, on=["station_name", "hour"])
 
     # ---------------------------------------------------------------
@@ -130,14 +153,14 @@ def engineer_features(df: pd.DataFrame, weather_df: pd.DataFrame = None) -> pd.D
     # FEATURE 4: Planned dwell time (how long train stops at station)
     # Longer dwell = more recovery potential. Missing = -1 flag.
     # ---------------------------------------------------------------
-    dwell = (
-        pd.to_datetime(features["departure_planned_time"], errors="coerce")
-        - pd.to_datetime(features["arrival_planned_time"], errors="coerce")
-    )
+    dwell = pd.to_datetime(
+        features["departure_planned_time"], errors="coerce"
+    ) - pd.to_datetime(features["arrival_planned_time"], errors="coerce")
     features["planned_dwell_minutes"] = dwell.dt.total_seconds().div(60)
     features["planned_dwell_minutes"] = features["planned_dwell_minutes"].fillna(-1)
     features["has_planned_times"] = (
-        features["arrival_planned_time"].notna() & features["departure_planned_time"].notna()
+        features["arrival_planned_time"].notna()
+        & features["departure_planned_time"].notna()
     ).astype(int)
 
     # ---------------------------------------------------------------
@@ -173,7 +196,9 @@ def add_historical_rates(train_df: pd.DataFrame, test_df: pd.DataFrame):
     The feature captures: 'at this station, on this hour and day-of-week,
     what fraction of trains historically were delayed?'
     """
-    rate = train_df.groupby(["station_name", "hour", "day_of_week"])["delay_binary"].mean()
+    rate = train_df.groupby(["station_name", "hour", "day_of_week"])[
+        "delay_binary"
+    ].mean()
     rate.name = "hist_delay_rate"
 
     train_df = train_df.join(rate, on=["station_name", "hour", "day_of_week"])
@@ -216,6 +241,7 @@ def generate_and_save():
 
     print("Loading weather data ...")
     from src.weather import get_weather_data
+
     weather_df = get_weather_data()
 
     print("Engineering features (including weather) ...")
@@ -223,26 +249,43 @@ def generate_and_save():
 
     print("Computing historical delay rates (train/test aware) ...")
     split_date = "2025-09-01"
-    train = df_feat[df_feat["time"] < split_date].copy()
-    test = df_feat[df_feat["time"] >= split_date].copy()
-    train, test = add_historical_rates(train, test)
-    df_feat = pd.concat([train, test], ignore_index=True)
+    train_df: pd.DataFrame = df_feat[df_feat["time"] < split_date].copy()
+    test_df: pd.DataFrame = df_feat[df_feat["time"] >= split_date].copy()
+    train_df, test_df = add_historical_rates(train_df, test_df)
+    df_feat = pd.concat([train_df, test_df], ignore_index=True)
 
     FEATURE_OUTPUT.parent.mkdir(parents=True, exist_ok=True)
     df_feat.to_parquet(FEATURE_OUTPUT, index=False)
     print(f"  Saved {len(df_feat):,} rows to {FEATURE_OUTPUT}")
 
     print("\nFeature overview:")
-    print(f"  Target rate: {df_feat['delay_binary'].mean()*100:.1f}%")
-    new_cols = [c for c in df_feat.columns if c not in [
-        "id","station_name","train_number","train_type","delay_in_min",
-        "is_canceled","time","train_line_ride_id","train_line_station_num",
-        "arrival_planned_time","departure_planned_time"
-    ]]
+    print(f"  Target rate: {df_feat['delay_binary'].mean() * 100:.1f}%")
+    new_cols = [
+        c
+        for c in df_feat.columns
+        if c
+        not in [
+            "id",
+            "station_name",
+            "train_number",
+            "train_type",
+            "delay_in_min",
+            "is_canceled",
+            "time",
+            "train_line_ride_id",
+            "train_line_station_num",
+            "arrival_planned_time",
+            "departure_planned_time",
+        ]
+    ]
     print(f"  Feature columns: {new_cols}")
     # Show weather coverage
     if any(c in df_feat.columns for c in WEATHER_COLS):
-        nan_pcts = {c: f"{df_feat[c].isna().mean()*100:.1f}%" for c in WEATHER_COLS if c in df_feat.columns}
+        nan_pcts = {
+            c: f"{df_feat[c].isna().mean() * 100:.1f}%"
+            for c in WEATHER_COLS
+            if c in df_feat.columns
+        }
         print(f"  Weather NaN %: {nan_pcts}")
     print(f"  Memory: {df_feat.memory_usage(deep=True).sum() / 1e6:.1f} MB")
 
