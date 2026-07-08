@@ -1,0 +1,98 @@
+{
+  "Logistic Regression": {
+    "accuracy": 0.73382309646234,
+    "precision": 0.7447417955642851,
+    "recall": 0.6615102788520253,
+    "f1": 0.7006629349307422,
+    "roc_auc": 0.8078261123311766
+  },
+  "XGBoost (default)": {
+    "accuracy": 0.746297678303676,
+    "precision": 0.7509769487556758,
+    "recall": 0.690107877060859,
+    "f1": 0.7192569077726174,
+    "roc_auc": 0.8235306861458048
+  },
+  "XGBoost (tuned)": {
+    "accuracy": 0.7469960357942447,
+    "precision": 0.7516166263498237,
+    "recall": 0.6911546625570644,
+    "f1": 0.7201187599881846,
+    "roc_auc": 0.824224735992064
+  },
+  "XGBoost + Weather": {
+    "accuracy": 0.7468591029529568,
+    "precision": 0.7539154174050481,
+    "recall": 0.6865604373237184,
+    "f1": 0.7186632069944224,
+    "roc_auc": 0.8243025625125697
+  },
+  "_best_model": "XGBoost + Weather",
+  "_training_date": "2026-07-08 21:28:37.103236",
+  "_training_rows": 812963,
+  "_split_date": "2025-09-01",
+  "_features": {
+    "numeric": [
+      "hour",
+      "day_of_week",
+      "month",
+      "is_weekend",
+      "is_rush_hour",
+      "is_holiday",
+      "prev_delay_min",
+      "train_count",
+      "hist_delay_rate",
+      "planned_dwell_minutes",
+      "is_first_stop",
+      "temperature_c",
+      "humidity_pct",
+      "precipitation_mm",
+      "wind_speed_ms",
+      "wind_direction",
+      "sunshine_minutes",
+      "cloud_cover_pct",
+      "pressure_hpa"
+    ],
+    "categorical": [
+      "station_name",
+      "season",
+      "prev_delayed",
+      "has_planned_times"
+    ]
+  },
+  "_feature_importance": {
+    "prev_delayed_1": 0.7545132040977478,
+    "prev_delay_min": 0.06450973451137543,
+    "is_first_stop": 0.023881956934928894,
+    "hist_delay_rate": 0.017226960510015488,
+    "station_name_Berlin-Spandau": 0.015112525783479214,
+    "station_name_K\u00f6ln Hbf": 0.012286323122680187,
+    "station_name_Frankfurt (Main) Hbf": 0.010340479202568531,
+    "station_name_D\u00fcsseldorf Hbf": 0.010233202017843723,
+    "station_name_Kassel-Wilhelmsh\u00f6he": 0.009021061472594738,
+    "is_holiday": 0.007661959622055292,
+    "planned_dwell_minutes": 0.005596167407929897,
+    "station_name_Hamburg Hbf": 0.005592279601842165,
+    "has_planned_times_1": 0.005579483229666948,
+    "season_winter": 0.0054617226123809814,
+    "station_name_Hannover Hbf": 0.005167835857719183,
+    "hour": 0.005036885384470224,
+    "station_name_N\u00fcrnberg Hbf": 0.004496694542467594,
+    "station_name_M\u00fcnchen Hbf": 0.004385259002447128,
+    "train_count": 0.00325208087451756,
+    "month": 0.0031548389233648777,
+    "precipitation_mm": 0.0029593855142593384,
+    "season_spring": 0.0027486085891723633,
+    "season_summer": 0.0027133289258927107,
+    "is_weekend": 0.002503354102373123,
+    "temperature_c": 0.0022803442552685738,
+    "sunshine_minutes": 0.002030123956501484,
+    "is_rush_hour": 0.0019570020958781242,
+    "day_of_week": 0.001855021226219833,
+    "pressure_hpa": 0.0018334932392463088,
+    "humidity_pct": 0.0017296953592449427,
+    "wind_speed_ms": 0.0016624844865873456,
+    "wind_direction": 0.0016549696447327733,
+    "cloud_cover_pct": 0.0015616202726960182
+  }
+}

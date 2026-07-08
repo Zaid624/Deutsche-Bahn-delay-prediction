@@ -63,6 +63,17 @@ class CandidateMatch:
     number: str
     s_id: Optional[str] = None
     time_diff_minutes: Optional[int] = None
+    origin: Optional[str] = None
+    destination: Optional[str] = None
+    line: Optional[str] = None
+
+    def get_route_stops(self) -> list[str]:
+        stops = []
+        if self.arrival_ppth:
+            stops.extend(parse_ppth(self.arrival_ppth))
+        if self.departure_ppth:
+            stops.extend(parse_ppth(self.departure_ppth)[1:])
+        return stops
 
 
 @dataclass
@@ -72,6 +83,8 @@ class RealtimeDelay:
     arrival_ct: Optional[str]
     departure_pt: Optional[str]
     departure_ct: Optional[str]
+    arrival_pp: Optional[str] = None
+    departure_pp: Optional[str] = None
 
     @property
     def arrival_delay_min(self) -> Optional[float]:
@@ -88,6 +101,30 @@ class RealtimeDelay:
             ct = datetime.strptime(self.departure_ct, "%y%m%d%H%M")
             return (ct - pt).total_seconds() / 60
         return None
+
+    def format_time(self, time_str: Optional[str]) -> Optional[str]:
+        if not time_str:
+            return None
+        try:
+            return datetime.strptime(time_str, "%y%m%d%H%M").strftime("%H:%M")
+        except ValueError:
+            return time_str
+
+    @property
+    def arrival_scheduled_time(self) -> Optional[str]:
+        return self.format_time(self.arrival_pt)
+
+    @property
+    def arrival_actual_time(self) -> Optional[str]:
+        return self.format_time(self.arrival_ct)
+
+    @property
+    def departure_scheduled_time(self) -> Optional[str]:
+        return self.format_time(self.departure_pt)
+
+    @property
+    def departure_actual_time(self) -> Optional[str]:
+        return self.format_time(self.departure_ct)
 
 
 def _get_credentials() -> tuple[str, str]:
@@ -206,6 +243,9 @@ def match_train_in_plan(
                 category=c,
                 number=n,
                 s_id=s.get("id"),
+                origin=tl.get("f"),
+                destination=tl.get("t"),
+                line=tl.get("l") or tl.get("fb"),
             )
             if target_hour is not None and scheduled_time:
                 try:
@@ -261,6 +301,8 @@ def get_realtime_delays(eva_number: str) -> dict[str, RealtimeDelay]:
                 arrival_ct=ar.get("ct") if ar is not None else None,
                 departure_pt=dp.get("pt") if dp is not None else None,
                 departure_ct=dp.get("ct") if dp is not None else None,
+                arrival_pp=ar.get("pp") if ar is not None else None,
+                departure_pp=dp.get("pp") if dp is not None else None,
             )
             # Only include if there's actual change data
             if delay.arrival_ct is not None or delay.departure_ct is not None:

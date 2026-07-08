@@ -184,6 +184,14 @@ class DelayPredictor:
             # Use first candidate (most likely match)
             match = candidates[0]
 
+            def fmt_time(t: Optional[str]) -> Optional[str]:
+                if not t:
+                    return None
+                try:
+                    return datetime.strptime(t, "%y%m%d%H%M").strftime("%H:%M")
+                except ValueError:
+                    return t
+
             result = {
                 "station_name": station_name,
                 "train_number": train_number,
@@ -191,11 +199,20 @@ class DelayPredictor:
                 "query_date": query_date,
                 "hour": hour,
                 "scheduled_time": match.scheduled_time,
+                "scheduled_time_display": fmt_time(match.scheduled_time),
                 "eva_number": eva,
                 "ambiguous": len(candidates) > 1,
                 "s_id": match.s_id,
+                "origin": match.origin,
+                "destination": match.destination,
+                "line": match.line,
+                "route_stops": match.get_route_stops(),
                 "actual_arrival_delay_min": None,
                 "actual_departure_delay_min": None,
+                "actual_arrival_time": None,
+                "actual_departure_time": None,
+                "arrival_platform": None,
+                "departure_platform": None,
                 "has_realtime_data": False,
             }
 
@@ -205,6 +222,10 @@ class DelayPredictor:
                 rt = realtime_delays[match.s_id]
                 result["actual_arrival_delay_min"] = rt.arrival_delay_min
                 result["actual_departure_delay_min"] = rt.departure_delay_min
+                result["actual_arrival_time"] = rt.arrival_actual_time
+                result["actual_departure_time"] = rt.departure_actual_time
+                result["arrival_platform"] = rt.arrival_pp
+                result["departure_platform"] = rt.departure_pp
                 result["has_realtime_data"] = True
                 logger.info(
                     "Realtime delay for ICE %s at %s: arrival=%s min, departure=%s min",
@@ -483,6 +504,14 @@ class DelayPredictor:
             "has_realtime_data": live_data.get("has_realtime_data", False),
             "actual_arrival_delay_min": live_data.get("actual_arrival_delay_min"),
             "actual_departure_delay_min": live_data.get("actual_departure_delay_min"),
+            "actual_arrival_time": live_data.get("actual_arrival_time"),
+            "actual_departure_time": live_data.get("actual_departure_time"),
+            "arrival_platform": live_data.get("arrival_platform"),
+            "departure_platform": live_data.get("departure_platform"),
+            "origin": live_data.get("origin"),
+            "destination": live_data.get("destination"),
+            "route_stops": live_data.get("route_stops", []),
+            "scheduled_time_display": live_data.get("scheduled_time_display"),
         }
 
         # 6. Return combined results
@@ -492,6 +521,43 @@ class DelayPredictor:
             **rt_info,
             "features": features.iloc[0].to_dict(),
         }
+
+
+    def get_model_metrics(self) -> dict:
+        """Load saved model performance metrics from JSON."""
+        metrics_path = Path("models/model_metrics.json")
+        if metrics_path.exists():
+            try:
+                import json as json_module
+                with open(metrics_path) as f:
+                    return json_module.load(f)
+            except Exception as e:
+                logger.warning("Failed to load model metrics: %s", e)
+        return {}
+
+    def get_feature_importance(self) -> Optional[dict]:
+        """Extract feature importance from the XGBoost model if available."""
+        try:
+            xgb = self.model.named_steps.get("classifier")
+            if xgb and hasattr(xgb, "feature_importances_"):
+                preprocessor = self.model.named_steps.get("preprocessor")
+                if preprocessor:
+                    num_features = preprocessor.transformers_[0][2]
+                    cat_encoder = preprocessor.transformers_[1][1]
+                    cat_features = preprocessor.transformers_[1][2]
+                    cat_names = []
+                    if hasattr(cat_encoder, "get_feature_names_out"):
+                        cat_names = cat_encoder.get_feature_names_out(cat_features).tolist()
+                    all_names = list(num_features) + cat_names
+                    if len(all_names) == len(xgb.feature_importances_):
+                        importances = sorted(
+                            zip(all_names, xgb.feature_importances_),
+                            key=lambda x: x[1], reverse=True,
+                        )
+                        return {name: float(imp) for name, imp in importances[:20]}
+        except Exception as e:
+            logger.warning("Failed to extract feature importance: %s", e)
+        return None
 
 
 # Convenience function for one-off predictions

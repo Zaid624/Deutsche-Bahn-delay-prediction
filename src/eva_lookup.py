@@ -9,26 +9,21 @@ from src.db_api import search_station, NotFoundError, DBApiError
 
 logger = logging.getLogger(__name__)
 
-# Known EVA numbers for our 10 DB stations (verified via DB API)
+# Known EVA numbers for our 10 DB stations (verified via DB Timetables API)
 # Format: canonical_name -> eva_number
 KNOWN_STATIONS: dict[str, str] = {
     "Frankfurt (Main) Hbf": "8000105",
     "Frankfurt Hbf": "8000105",
     "Frankfurt(Main)Hbf": "8000105",
-    "Berlin Hauptbahnhof": "8011160",
-    "Berlin Hbf": "8011160",
-    "Berlin Hbf (tief)": "8011160",
-    "München Hbf": "8000261",
+    "Berlin Hauptbahnhof": "8098160",
+    "Berlin Hbf": "8098160",
     "München Hbf": "8000261",
     "Hannover Hbf": "8000152",
     "Hamburg Hbf": "8002549",
     "Nürnberg Hbf": "8000284",
-    "Nürnberg Hbf": "8000284",
-    "Berlin-Spandau": "8089020",
+    "Berlin-Spandau": "8010404",
     "Köln Hbf": "8000207",
-    "Köln Hbf": "8000207",
-    "Kassel-Wilhelmshöhe": "8000254",
-    "Düsseldorf Hbf": "8000085",
+    "Kassel-Wilhelmshöhe": "8003200",
     "Düsseldorf Hbf": "8000085",
 }
 

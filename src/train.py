@@ -5,11 +5,13 @@ Features now include cascading delay, historical rates, and train
 frequency for significantly better accuracy.
 """
 
+import json
 import sys
 import warnings
 from pathlib import Path
 
 import joblib
+import numpy as np
 import pandas as pd
 from sklearn.compose import ColumnTransformer
 from sklearn.linear_model import LogisticRegression
@@ -294,7 +296,52 @@ def main():
     comparison = pd.DataFrame(results).round(4)
     print(comparison.to_string())
 
-    print(f"\nModels saved to {MODEL_DIR}/")
+    # Save metrics for UI display
+    metrics_data = {}
+    for name, m in results.items():
+        metrics_data[name] = {k: float(v) for k, v in m.items()}
+
+    # Add best model name
+    best_model = max(results, key=lambda k: results[k]["roc_auc"])
+    metrics_data["_best_model"] = best_model
+    metrics_data["_training_date"] = str(pd.Timestamp.now())
+    metrics_data["_training_rows"] = len(df)
+    metrics_data["_split_date"] = SPLIT_DATE
+    metrics_data["_features"] = {
+        "numeric": NUMERIC_FEATURES + WEATHER_FEATURES,
+        "categorical": CATEGORIC_FEATURES,
+    }
+
+    # Extract feature importance from best XGBoost model
+    try:
+        xgb_model = joblib.load(XGB_WEATHER_PATH)
+        xgb_clf = xgb_model.named_steps.get("classifier")
+        if xgb_clf and hasattr(xgb_clf, "feature_importances_"):
+            preprocessor = xgb_model.named_steps.get("preprocessor")
+            if preprocessor:
+                num_features = preprocessor.transformers_[0][2]
+                cat_encoder = preprocessor.transformers_[1][1]
+                cat_features = preprocessor.transformers_[1][2]
+                cat_names = []
+                if hasattr(cat_encoder, "get_feature_names_out"):
+                    cat_names = cat_encoder.get_feature_names_out(cat_features).tolist()
+                all_names = list(num_features) + cat_names
+                if len(all_names) == len(xgb_clf.feature_importances_):
+                    fi_list = sorted(
+                        zip(all_names, xgb_clf.feature_importances_),
+                        key=lambda x: x[1], reverse=True,
+                    )
+                    metrics_data["_feature_importance"] = {
+                        name: float(imp) for name, imp in fi_list
+                    }
+    except Exception as e:
+        print(f"  Warning: Could not extract feature importance: {e}")
+
+    metrics_path = MODEL_DIR / "model_metrics.json"
+    with open(metrics_path, "w") as f:
+        json.dump(metrics_data, f, indent=2, default=str)
+    print(f"\nMetrics saved to {metrics_path}")
+    print(f"Models saved to {MODEL_DIR}/")
 
 
 if __name__ == "__main__":
