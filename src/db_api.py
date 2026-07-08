@@ -131,9 +131,14 @@ def _get_credentials() -> tuple[str, str]:
     client_id = os.getenv("DB_CLIENT_ID")
     api_key = os.getenv("DB_CLIENT_SECRET")
     if not client_id or not api_key:
-        raise AuthenticationError(
-            "DB_CLIENT_ID and DB_CLIENT_SECRET must be set in .env"
-        )
+        import streamlit as st
+        try:
+            client_id = st.secrets["DB_CLIENT_ID"]
+            api_key = st.secrets["DB_CLIENT_SECRET"]
+        except (KeyError, Exception):
+            raise AuthenticationError(
+                "DB_CLIENT_ID and DB_CLIENT_SECRET must be set in .env or Streamlit secrets"
+            )
     return client_id, api_key
 
 
