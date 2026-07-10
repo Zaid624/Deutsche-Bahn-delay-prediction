@@ -7,10 +7,10 @@ import pandas as pd
 import streamlit as st
 
 from src.predictor import DelayPredictor
-from components.styles import inject_css, DB_RED, TEXT, MUTED, CARD, CARD2
+from components.styles import inject_css, ACCENT, TEXT, MUTED, CARD, CARD2, GREEN
 from components.sidebar import render_sidebar
 from components.hero import render_prediction_card
-from components.cards import kpi_card, render_kpi_row, feature_box, render_feature_grid, recommendation_box
+from components.cards import kpi_card, render_kpi_row, render_feature_grid, recommendation_box
 from components.charts import (
     probability_gauge, confidence_radar, feature_importance_bar,
     model_comparison_chart, delay_distribution,
@@ -59,8 +59,8 @@ def render_top_nav():
             </div>
         </div>
         <div class="nav-right">
-            <div class="nav-status online">
-                <span class="nav-status dot"></span>
+            <div style="display:flex; align-items:center; gap:6px; font-size:0.7rem; color:{MUTED};">
+                <span style="width:6px; height:6px; border-radius:50%; background:{GREEN};"></span>
                 System Online
             </div>
             <div class="nav-time">{datetime.now().strftime('%Y-%m-%d %H:%M')}</div>
@@ -145,17 +145,15 @@ def render_prediction_hero(predictor, result):
         confidence = result.get("confidence", "low")
         confidence_score = result.get("confidence_score", 0)
 
-        st.markdown(f'<div class="chart-card">', unsafe_allow_html=True)
-        st.markdown(f'<div class="chart-card-title">📊 Probability Distribution <span class="badge">Live</span></div>', unsafe_allow_html=True)
+        st.markdown("---")
+        st.markdown("**📊 Probability Distribution**")
         dist_fig = delay_distribution(probability)
         st.plotly_chart(dist_fig, use_container_width=True, config={"displayModeBar": False})
-        st.markdown('</div>', unsafe_allow_html=True)
 
-        st.markdown(f'<div class="chart-card" style="margin-top:1rem;">', unsafe_allow_html=True)
-        st.markdown(f'<div class="chart-card-title">🛡️ Confidence Profile <span class="badge">Model</span></div>', unsafe_allow_html=True)
+        st.markdown("---")
+        st.markdown("**🛡️ Confidence Profile**")
         radar_fig = confidence_radar(confidence_score, confidence)
         st.plotly_chart(radar_fig, use_container_width=True, config={"displayModeBar": False})
-        st.markdown('</div>', unsafe_allow_html=True)
 
     # KPI row
     probability = result.get("probability", 0)
@@ -183,20 +181,18 @@ def render_prediction_hero(predictor, result):
     # Charts row
     col_c1, col_c2 = st.columns(2)
     with col_c1:
-        st.markdown(f'<div class="chart-card">', unsafe_allow_html=True)
-        st.markdown(f'<div class="chart-card-title">🎯 Probability Gauge <span class="badge">Live</span></div>', unsafe_allow_html=True)
+        st.markdown("---")
+        st.markdown("**🎯 Probability Gauge**")
         gauge_fig = probability_gauge(probability)
         st.plotly_chart(gauge_fig, use_container_width=True, config={"displayModeBar": False})
-        st.markdown('</div>', unsafe_allow_html=True)
 
     with col_c2:
         fi = predictor.get_feature_importance()
         if fi:
-            st.markdown(f'<div class="chart-card">', unsafe_allow_html=True)
-            st.markdown(f'<div class="chart-card-title">🔬 Feature Importance <span class="badge">Model</span></div>', unsafe_allow_html=True)
+            st.markdown("---")
+            st.markdown("**🔬 Feature Importance**")
             fi_fig = feature_importance_bar(fi)
             st.plotly_chart(fi_fig, use_container_width=True, config={"displayModeBar": False})
-            st.markdown('</div>', unsafe_allow_html=True)
 
     # Feature transparency
     if "features" in result:
@@ -249,12 +245,11 @@ def render_recent_predictions(predictor):
 
     # Historical trend chart
     if len(recent) >= 3:
-        st.markdown(f'<div class="chart-card" style="margin-top:1rem;">', unsafe_allow_html=True)
-        st.markdown(f'<div class="chart-card-title">📈 Prediction History Trend <span class="badge">Log</span></div>', unsafe_allow_html=True)
+        st.markdown("---")
+        st.markdown("**📈 Prediction History Trend**")
         trend_fig = historical_trend_line(recent)
         if trend_fig:
             st.plotly_chart(trend_fig, use_container_width=True, config={"displayModeBar": False})
-        st.markdown('</div>', unsafe_allow_html=True)
 
 
 def model_tab(predictor):
@@ -312,10 +307,9 @@ def model_tab(predictor):
         comp.index.name = "Model"
         chart_fig = model_comparison_chart(comp)
         if chart_fig:
-            st.markdown(f'<div class="chart-card">', unsafe_allow_html=True)
-            st.markdown(f'<div class="chart-card-title">📊 Metric Comparison <span class="badge">All Models</span></div>', unsafe_allow_html=True)
+            st.markdown("---")
+            st.markdown("**📊 Metric Comparison**")
             st.plotly_chart(chart_fig, use_container_width=True, config={"displayModeBar": False})
-            st.markdown('</div>', unsafe_allow_html=True)
 
     # Feature importance
     fi = metrics.get("_feature_importance")
@@ -323,11 +317,10 @@ def model_tab(predictor):
         st.markdown('<div class="section-title">🔬 Feature Importance</div>', unsafe_allow_html=True)
         col_f1, col_f2 = st.columns(2)
         with col_f1:
-            st.markdown(f'<div class="chart-card">', unsafe_allow_html=True)
-            st.markdown(f'<div class="chart-card-title">📊 Importance Weights <span class="badge">XGBoost</span></div>', unsafe_allow_html=True)
+            st.markdown("---")
+            st.markdown("**📊 Importance Weights**")
             fi_fig = feature_importance_bar(fi)
             st.plotly_chart(fi_fig, use_container_width=True, config={"displayModeBar": False})
-            st.markdown('</div>', unsafe_allow_html=True)
         with col_f2:
             # Additional metrics from best model
             best_metrics = metrics.get(best, {})
@@ -338,19 +331,17 @@ def model_tab(predictor):
                 "tp": best_metrics.get("tp", 0),
             }
             if any(cm.values()):
-                st.markdown(f'<div class="chart-card">', unsafe_allow_html=True)
-                st.markdown(f'<div class="chart-card-title">📊 Confusion Matrix <span class="badge">{best}</span></div>', unsafe_allow_html=True)
+                st.markdown("---")
+                st.markdown("**📊 Confusion Matrix**")
                 cm_fig = confusion_matrix_heatmap(cm)
                 st.plotly_chart(cm_fig, use_container_width=True, config={"displayModeBar": False})
-                st.markdown('</div>', unsafe_allow_html=True)
 
             auc = best_metrics.get("roc_auc", 0)
             if auc:
-                st.markdown(f'<div class="chart-card" style="margin-top:1rem;">', unsafe_allow_html=True)
-                st.markdown(f'<div class="chart-card-title">📈 ROC Curve <span class="badge">AUC={auc:.3f}</span></div>', unsafe_allow_html=True)
+                st.markdown("---")
+                st.markdown(f"**📈 ROC Curve** (AUC={auc:.3f})")
                 roc_fig = roc_curve_chart(auc)
                 st.plotly_chart(roc_fig, use_container_width=True, config={"displayModeBar": False})
-                st.markdown('</div>', unsafe_allow_html=True)
 
     # Training details
     st.markdown('<div class="section-title">📋 Training Configuration</div>', unsafe_allow_html=True)

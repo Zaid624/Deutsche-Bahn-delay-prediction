@@ -1,27 +1,28 @@
 import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
-from components.styles import DB_RED, GREEN, ORANGE, RED, BLUE, TEXT, MUTED, CARD, CARD2
+from components.styles import ACCENT, GREEN, ORANGE, RED, TEXT, MUTED, CARD, CARD2, FONT_MONO
 
-_PC = dict(displayModeBar=False, responsive=True, autosizable=True)
+_ACCENT_RGB = tuple(int(ACCENT.lstrip("#")[i:i+2], 16) for i in (0, 2, 4))
 
-_GRID = "rgba(255,255,255,0.04)"
-_SUBGRID = "rgba(255,255,255,0.02)"
-
-def _base(title="", height=280, showlegend=False):
-    return dict(
-        title=dict(text=title, font=dict(family="Inter, sans-serif", color=TEXT, size=13), x=0, xanchor="left"),
-        paper_bgcolor="rgba(0,0,0,0)",
-        plot_bgcolor="rgba(0,0,0,0)",
-        margin=dict(l=8, r=8, t=36, b=8),
-        height=height,
-        font=dict(family="Inter, sans-serif", color=MUTED, size=10),
-        showlegend=showlegend,
-        hovermode="x unified",
-        hoverlabel=dict(bgcolor=CARD2, font_family="Inter, sans-serif", font_color=TEXT, bordercolor="rgba(255,255,255,0.08)", font_size=11),
-        transition=dict(duration=500, easing="cubic-in-out"),
-    )
-
+PLOTLY_TEMPLATE = dict(
+    layout=dict(
+        paper_bgcolor=CARD,
+        plot_bgcolor=CARD,
+        font=dict(family=FONT_MONO, color=MUTED),
+        xaxis=dict(
+            gridcolor=CARD2,
+            linecolor=CARD2,
+            zerolinecolor=CARD2,
+        ),
+        yaxis=dict(
+            gridcolor=CARD2,
+            linecolor=CARD2,
+            zerolinecolor=CARD2,
+        ),
+        colorway=[ACCENT, GREEN, ORANGE, RED],
+    ),
+)
 
 def _hover(name, value, pct=None, extra=None):
     parts = [f"<b>{name}</b>"]
@@ -35,25 +36,29 @@ def _hover(name, value, pct=None, extra=None):
 
 def probability_gauge(prob: float):
     pct = prob * 100
-    color = GREEN if prob < 0.4 else ORANGE if prob < 0.7 else RED
-    label = "On Time" if prob < 0.4 else "Uncertain" if prob < 0.7 else "Delayed"
+    if prob < 0.4:
+        color = GREEN
+    elif prob < 0.7:
+        color = ORANGE
+    else:
+        color = RED
 
     fig = go.Figure(go.Indicator(
         mode="gauge+number+delta",
         value=pct,
-        number=dict(font=dict(family="Inter, sans-serif", color=TEXT, size=32), suffix="%"),
+        number=dict(font=dict(family=FONT_MONO, color=TEXT, size=32), suffix="%"),
         delta=dict(reference=50, increasing=dict(color=RED), decreasing=dict(color=GREEN)),
         gauge=dict(
             axis=dict(range=[0, 100], tickwidth=0, tickcolor=MUTED,
-                     tickfont=dict(family="Inter, sans-serif", color=MUTED, size=9)),
+                     tickfont=dict(family=FONT_MONO, color=MUTED, size=9)),
             bar=dict(color=color, thickness=0.35),
             bgcolor="rgba(0,0,0,0)",
             borderwidth=0,
             shape="angular",
             steps=[
-                dict(range=[0, 40], color="rgba(34,197,94,0.06)"),
-                dict(range=[40, 70], color="rgba(245,158,11,0.06)"),
-                dict(range=[70, 100], color="rgba(239,68,68,0.06)"),
+                dict(range=[0, 40], color=f"rgba(34,197,94,0.08)"),
+                dict(range=[40, 70], color=f"rgba(234,179,8,0.08)"),
+                dict(range=[70, 100], color=f"rgba(239,68,68,0.08)"),
             ],
             threshold=dict(
                 line=dict(color=TEXT, width=2),
@@ -62,7 +67,7 @@ def probability_gauge(prob: float):
             ),
         ),
     ))
-    fig.update_layout(**_base(height=260))
+    fig.update_layout(**PLOTLY_TEMPLATE["layout"], height=300, margin=dict(l=20, r=20, t=30, b=20))
     return fig
 
 
@@ -77,29 +82,30 @@ def confidence_radar(confidence_score: float, confidence_label: str):
         r=values + [values[0]],
         theta=categories + [categories[0]],
         fill="toself",
-        fillcolor=f"rgba(236,0,22,0.12)",
-        line=dict(color=DB_RED, width=2),
+        fillcolor=f"rgba({_ACCENT_RGB[0]},{_ACCENT_RGB[1]},{_ACCENT_RGB[2]},0.12)",
+        line=dict(color=ACCENT, width=2),
         name="Score",
         hovertemplate=_hover("%{theta}", "%{r:.0%}", extra="Confidence Profile"),
     ))
-    # Full-baseline reference
     fig.add_trace(go.Scatterpolar(
         r=[1] * 5, theta=categories + [categories[0]],
         fill="toself",
         fillcolor="rgba(255,255,255,0.02)",
-        line=dict(color="rgba(255,255,255,0.06)", width=1, dash="dot"),
+        line=dict(color=CARD2, width=1, dash="dot"),
         name="Baseline",
         hovertemplate="Baseline: %{r:.0%}<extra></extra>",
     ))
     fig.update_layout(
         polar=dict(
             bgcolor="rgba(0,0,0,0)",
-            radialaxis=dict(range=[0, 1], showticklabels=False, gridcolor=_GRID),
-            angularaxis=dict(tickfont=dict(family="Inter, sans-serif", color=MUTED, size=9), gridcolor=_GRID),
+            radialaxis=dict(range=[0, 1], showticklabels=False, gridcolor=CARD2),
+            angularaxis=dict(tickfont=dict(family=FONT_MONO, color=MUTED, size=9), gridcolor=CARD2),
         ),
-        **_base(height=280, showlegend=True),
+        **PLOTLY_TEMPLATE["layout"],
+        height=280,
+        showlegend=True,
         legend=dict(orientation="h", yanchor="bottom", y=1.08, xanchor="center", x=0.5,
-                   font=dict(family="Inter, sans-serif", color=MUTED, size=9)),
+                   font=dict(family=FONT_MONO, color=MUTED, size=9)),
     )
     return fig
 
@@ -116,7 +122,7 @@ def feature_importance_bar(fi_dict: dict, top_n: int = 12):
         orientation="h",
         marker=dict(
             color=values,
-            colorscale=[[0, "rgba(59,130,246,0.4)"], [0.5, "rgba(139,92,246,0.7)"], [1, DB_RED]],
+            colorscale=[[0, f"rgba({_ACCENT_RGB[0]},{_ACCENT_RGB[1]},{_ACCENT_RGB[2]},0.15)"], [0.5, f"rgba(139,92,246,0.5)"], [1, ACCENT]],
             line=dict(color="rgba(255,255,255,0.04)", width=1),
             cornerradius=3,
         ),
@@ -129,10 +135,11 @@ def feature_importance_bar(fi_dict: dict, top_n: int = 12):
         customdata=np.array([[v / total * 100] for v in values]),
     ))
     fig.update_layout(
-        **_base(height=max(240, len(features) * 22)),
-        xaxis=dict(title="", showgrid=True, gridcolor=_GRID, zeroline=False, tickfont=dict(family="Inter, sans-serif", color=MUTED, size=9)),
-        yaxis=dict(title="", tickfont=dict(family="Inter, sans-serif", color=TEXT, size=10)),
+        **PLOTLY_TEMPLATE["layout"],
+        height=max(240, len(features) * 22),
     )
+    fig.update_xaxes(title="", showgrid=True, gridcolor=CARD2, zeroline=False, tickfont=dict(family=FONT_MONO, color=MUTED, size=9))
+    fig.update_yaxes(title="", tickfont=dict(family=FONT_MONO, color=TEXT, size=10))
     return fig
 
 
@@ -144,7 +151,7 @@ def model_comparison_chart(comp_df: pd.DataFrame):
 
     melted = comp_df.reset_index().melt(id_vars="Model", value_vars=available, var_name="Metric", value_name="Score")
     models = melted["Model"].unique()
-    palette = [DB_RED, BLUE, GREEN, ORANGE, "#A855F7", "#06B6D4"]
+    palette = [ACCENT, GREEN, ORANGE, RED]
     color_map = {m: palette[i % len(palette)] for i, m in enumerate(models)}
 
     fig = go.Figure()
@@ -160,23 +167,31 @@ def model_comparison_chart(comp_df: pd.DataFrame):
 
     fig.update_layout(
         barmode="group",
-        **_base(height=300, showlegend=True),
-        yaxis=dict(range=[0, 1], title="", gridcolor=_GRID, zeroline=False,
-                   tickfont=dict(family="Inter, sans-serif", color=MUTED, size=9)),
-        xaxis=dict(title="", tickfont=dict(family="Inter, sans-serif", color=TEXT, size=9)),
+        **PLOTLY_TEMPLATE["layout"],
+        height=300,
+        showlegend=True,
         legend=dict(orientation="h", yanchor="bottom", y=1.08, xanchor="center", x=0.5,
-                   font=dict(family="Inter, sans-serif", color=MUTED, size=9)),
+                   font=dict(family=FONT_MONO, color=MUTED, size=9)),
     )
+    fig.update_xaxes(title="", tickfont=dict(family=FONT_MONO, color=TEXT, size=9))
+    fig.update_yaxes(range=[0, 1], title="", gridcolor=CARD2, zeroline=False,
+                     tickfont=dict(family=FONT_MONO, color=MUTED, size=9))
     return fig
 
 
 def delay_distribution(prob: float):
     pct = prob * 100
-    zone_color = GREEN if prob < 0.4 else ORANGE if prob < 0.7 else RED
-    zone_label = "Likely On Time" if prob < 0.4 else "Uncertain" if prob < 0.7 else "Likely Delayed"
+    if prob < 0.4:
+        zone_color = GREEN
+        zone_label = "Likely On Time"
+    elif prob < 0.7:
+        zone_color = ORANGE
+        zone_label = "Uncertain"
+    else:
+        zone_color = RED
+        zone_label = "Likely Delayed"
 
     fig = go.Figure()
-    # Probability axis line
     fig.add_trace(go.Scatter(
         x=[0, 1], y=[0.5, 0.5],
         mode="lines",
@@ -184,19 +199,17 @@ def delay_distribution(prob: float):
         showlegend=False,
         hoverinfo="skip",
     ))
-    # Marker
     fig.add_trace(go.Scatter(
         x=[prob], y=[0.5],
         mode="markers+text",
         marker=dict(size=16, color=zone_color, line=dict(color=TEXT, width=2)),
         text=[f"{pct:.0f}%"],
         textposition="top center",
-        textfont=dict(family="Inter, sans-serif", color=TEXT, size=11, weight="bold"),
+        textfont=dict(family=FONT_MONO, color=TEXT, size=11, weight="bold"),
         showlegend=False,
         hovertemplate=_hover("Delay Probability", f"{pct:.1f}%", extra=f"Zone: {zone_label}"),
     ))
 
-    # Zone backgrounds
     zones = [(0, 0.4, "On Time", GREEN), (0.4, 0.7, "Uncertain", ORANGE), (0.7, 1, "Delayed", RED)]
     for start, end, label, clr in zones:
         fig.add_vrect(
@@ -206,16 +219,17 @@ def delay_distribution(prob: float):
         )
         fig.add_annotation(
             x=(start + end) / 2, y=0.42, text=label,
-            font=dict(family="Inter, sans-serif", color=clr, size=8),
+            font=dict(family=FONT_MONO, color=clr, size=8),
             showarrow=False, yanchor="top",
         )
 
     fig.update_layout(
-        **_base(height=140),
-        xaxis=dict(range=[-0.03, 1.03], title="", tickformat=".0%",
-                   tickfont=dict(family="Inter, sans-serif", color=MUTED, size=8)),
-        yaxis=dict(showticklabels=False, showgrid=False, range=[0.3, 0.65]),
+        **PLOTLY_TEMPLATE["layout"],
+        height=140,
     )
+    fig.update_xaxes(range=[-0.03, 1.03], title="", tickformat=".0%",
+                     tickfont=dict(family=FONT_MONO, color=MUTED, size=8))
+    fig.update_yaxes(showticklabels=False, showgrid=False, range=[0.3, 0.65])
     return fig
 
 
@@ -232,7 +246,7 @@ def historical_trend_line(recent_df: pd.DataFrame):
     fig.add_trace(go.Scatter(
         x=df["idx"], y=df["predicted_prob"],
         mode="lines+markers",
-        line=dict(color=DB_RED, width=2.5, shape="spline"),
+        line=dict(color=ACCENT, width=2.5, shape="spline"),
         marker=dict(
             color=df["predicted_prob"],
             colorscale=[[0, GREEN], [0.5, ORANGE], [1, RED]],
@@ -250,14 +264,15 @@ def historical_trend_line(recent_df: pd.DataFrame):
     ))
     fig.add_hline(y=0.5, line=dict(color="rgba(255,255,255,0.1)", width=1, dash="dash"))
     fig.add_annotation(x=0, y=0.52, text="Threshold 50%", showarrow=False,
-                       font=dict(family="Inter, sans-serif", color=MUTED, size=8))
+                       font=dict(family=FONT_MONO, color=MUTED, size=8))
 
     fig.update_layout(
-        **_base(height=280),
-        xaxis=dict(title="", showticklabels=False, zeroline=False),
-        yaxis=dict(range=[0, 1], title="", tickformat=".0%", gridcolor=_GRID, zeroline=False,
-                   tickfont=dict(family="Inter, sans-serif", color=MUTED, size=9)),
+        **PLOTLY_TEMPLATE["layout"],
+        height=280,
     )
+    fig.update_xaxes(title="", showticklabels=False, zeroline=False)
+    fig.update_yaxes(range=[0, 1], title="", tickformat=".0%", gridcolor=CARD2, zeroline=False,
+                     tickfont=dict(family=FONT_MONO, color=MUTED, size=9))
     return fig
 
 
@@ -278,7 +293,7 @@ def confusion_matrix_heatmap(cm: dict):
             annotations.append(dict(
                 x=j, y=i,
                 text=f"<b>{val}</b><br><span style='font-size:9px;color:{MUTED}'>{labels[i][j]}</span>",
-                font=dict(family="Inter, sans-serif", size=12, color=TEXT),
+                font=dict(family=FONT_MONO, size=12, color=TEXT),
                 showarrow=False,
                 xanchor="center",
                 yanchor="middle",
@@ -291,8 +306,9 @@ def confusion_matrix_heatmap(cm: dict):
         text=[[f"{v}" for v in row] for row in matrix],
         texttemplate="%{text}",
         textfont=dict(size=1, color="rgba(0,0,0,0)"),
-        colorscale=[[0, "rgba(59,130,246,0.15)"], [0.3, "rgba(99,102,241,0.3)"],
-                    [0.6, "rgba(236,0,22,0.4)"], [1, DB_RED]],
+        colorscale=[[0, f"rgba({_ACCENT_RGB[0]},{_ACCENT_RGB[1]},{_ACCENT_RGB[2]},0.08)"],
+                    [0.5, f"rgba({_ACCENT_RGB[0]},{_ACCENT_RGB[1]},{_ACCENT_RGB[2]},0.35)"],
+                    [1, ACCENT]],
         showscale=False,
         hovertemplate=_hover(
             "%{x}<br>%{y}",
@@ -307,12 +323,11 @@ def confusion_matrix_heatmap(cm: dict):
         fig.add_annotation(a)
 
     fig.update_layout(
-        **_base(height=300),
-        xaxis=dict(title="", side="bottom", tickfont=dict(family="Inter, sans-serif", color=TEXT, size=9)),
-        yaxis=dict(title="", autorange="reversed", tickfont=dict(family="Inter, sans-serif", color=TEXT, size=9)),
+        **PLOTLY_TEMPLATE["layout"],
+        height=300,
     )
-    fig.update_xaxes(constrain="domain")
-    fig.update_yaxes(constrain="domain")
+    fig.update_xaxes(title="", side="bottom", tickfont=dict(family=FONT_MONO, color=TEXT, size=9), constrain="domain")
+    fig.update_yaxes(title="", autorange="reversed", tickfont=dict(family=FONT_MONO, color=TEXT, size=9), constrain="domain")
     return fig
 
 
@@ -324,9 +339,9 @@ def roc_curve_chart(auc: float):
     fig.add_trace(go.Scatter(
         x=fpr, y=tpr,
         mode="lines",
-        line=dict(color=DB_RED, width=3, shape="spline"),
+        line=dict(color=ACCENT, width=3, shape="spline"),
         fill="tozeroy",
-        fillcolor=f"rgba(236,0,22,0.05)",
+        fillcolor=f"rgba({_ACCENT_RGB[0]},{_ACCENT_RGB[1]},{_ACCENT_RGB[2]},0.05)",
         name=f"AUC = {auc:.3f}",
         hovertemplate=_hover(
             "ROC Curve",
@@ -343,12 +358,14 @@ def roc_curve_chart(auc: float):
     ))
 
     fig.update_layout(
-        **_base(height=280, showlegend=True),
-        xaxis=dict(title="False Positive Rate", range=[0, 1], gridcolor=_GRID, zeroline=False,
-                   tickfont=dict(family="Inter, sans-serif", color=MUTED, size=9)),
-        yaxis=dict(title="True Positive Rate", range=[0, 1], gridcolor=_GRID, zeroline=False,
-                   tickfont=dict(family="Inter, sans-serif", color=MUTED, size=9)),
+        **PLOTLY_TEMPLATE["layout"],
+        height=280,
+        showlegend=True,
         legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1,
-                   font=dict(family="Inter, sans-serif", color=MUTED, size=9)),
+                   font=dict(family=FONT_MONO, color=MUTED, size=9)),
     )
+    fig.update_xaxes(title="False Positive Rate", range=[0, 1], gridcolor=CARD2, zeroline=False,
+                     tickfont=dict(family=FONT_MONO, color=MUTED, size=9))
+    fig.update_yaxes(title="True Positive Rate", range=[0, 1], gridcolor=CARD2, zeroline=False,
+                     tickfont=dict(family=FONT_MONO, color=MUTED, size=9))
     return fig

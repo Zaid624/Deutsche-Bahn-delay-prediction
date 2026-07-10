@@ -72,6 +72,16 @@ WEATHER_COLS = [
     "pressure_hpa",
 ]
 
+# Weather extreme binary flags derived from existing weather columns
+WEATHER_EXTREME_FLAGS = [
+    "is_heavy_rain",
+    "is_snow",
+    "is_storm_wind",
+    "is_freezing",
+    "is_extreme_heat",
+    "has_severe_weather_warning",
+]
+
 
 def engineer_features(
     df: pd.DataFrame, weather_df: pd.DataFrame | None = None
@@ -176,11 +186,46 @@ def engineer_features(
     if weather_df is not None:
         weather_lookup = weather_df.copy()
         weather_lookup["date"] = pd.to_datetime(weather_lookup["date"]).dt.date
+        merge_cols = WEATHER_COLS.copy()
+        if "has_severe_weather_warning" in weather_lookup.columns:
+            merge_cols = merge_cols + ["has_severe_weather_warning"]
         features = features.merge(
-            weather_lookup[["station_name", "date", "hour"] + WEATHER_COLS],
+            weather_lookup[["station_name", "date", "hour"] + merge_cols],
             on=["station_name", "date", "hour"],
             how="left",
         )
+
+    # ---------------------------------------------------------------
+    # Weather extreme binary flags (Phase 1 improvement)
+    # Derive from existing weather columns using domain thresholds
+    # ---------------------------------------------------------------
+    if weather_df is not None:
+        features["is_heavy_rain"] = (
+            features["precipitation_mm"].fillna(0) >= 10.0
+        ).astype(int)
+        features["is_snow"] = (
+            (features["temperature_c"].fillna(99) < 2.0)
+            & (features["precipitation_mm"].fillna(0) > 0.5)
+        ).astype(int)
+        features["is_storm_wind"] = (
+            features["wind_speed_ms"].fillna(0) >= 17.2
+        ).astype(int)
+        features["is_freezing"] = (
+            features["temperature_c"].fillna(99) <= 0.0
+        ).astype(int)
+        features["is_extreme_heat"] = (
+            features["temperature_c"].fillna(-99) >= 30.0
+        ).astype(int)
+
+    # ---------------------------------------------------------------
+    # DWD official severe weather warnings (merged below)
+    # ---------------------------------------------------------------
+    if weather_df is not None and "has_severe_weather_warning" in features.columns:
+        features["has_severe_weather_warning"] = (
+            features["has_severe_weather_warning"].fillna(0).astype(int)
+        )
+    elif weather_df is not None and "has_severe_weather_warning" not in features.columns:
+        features["has_severe_weather_warning"] = 0
 
     # Clean up temporary columns
     features.drop(columns=["ride_date"], inplace=True)
@@ -280,13 +325,19 @@ def generate_and_save():
     ]
     print(f"  Feature columns: {new_cols}")
     # Show weather coverage
-    if any(c in df_feat.columns for c in WEATHER_COLS):
+    weather_check_cols = WEATHER_COLS + WEATHER_EXTREME_FLAGS
+    if any(c in df_feat.columns for c in weather_check_cols):
         nan_pcts = {
             c: f"{df_feat[c].isna().mean() * 100:.1f}%"
-            for c in WEATHER_COLS
+            for c in weather_check_cols
             if c in df_feat.columns
         }
         print(f"  Weather NaN %: {nan_pcts}")
+    # Show weather extreme flag rates
+    extreme_flags_present = [c for c in WEATHER_EXTREME_FLAGS if c in df_feat.columns]
+    if extreme_flags_present:
+        rates = {c: f"{df_feat[c].mean() * 100:.2f}%" for c in extreme_flags_present}
+        print(f"  Weather extreme flag rates: {rates}")
     print(f"  Memory: {df_feat.memory_usage(deep=True).sum() / 1e6:.1f} MB")
 
     return df_feat

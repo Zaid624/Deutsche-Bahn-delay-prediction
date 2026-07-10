@@ -1,20 +1,18 @@
 from datetime import datetime
 import streamlit as st
 from streamlit_option_menu import option_menu
-from components.styles import DB_RED, TEXT, MUTED, CARD, CARD2, BG
+from components.styles import ACCENT, TEXT, MUTED, CARD, CARD2, BG, FONT_MONO
 
 def render_sidebar(predictor):
     with st.sidebar:
         # Logo + Brand
         st.markdown(f"""
         <div style="display:flex; align-items:center; gap:12px; padding:0.5rem 0 0.5rem 0;">
-            <div style="width:40px; height:40px; background:linear-gradient(135deg, {DB_RED}, #ff4d4d);
-                        border-radius:12px; display:flex; align-items:center; justify-content:center;
-                        font-size:1.2rem; font-weight:900; color:white; box-shadow:0 2px 8px rgba(236,0,22,0.4);">
-                🚂
-            </div>
+            <div style="width:32px; height:32px; background:{ACCENT};
+                        border-radius:6px; display:flex; align-items:center; justify-content:center;
+                        font-size:0.9rem; font-weight:700; color:white;">DB</div>
             <div>
-                <div style="font-size:1.1rem; font-weight:700; color:{TEXT}; letter-spacing:-0.3px;">DB Predictor</div>
+                <div style="font-size:1.05rem; font-weight:700; color:{TEXT};">Delay Predictor</div>
                 <div style="font-size:0.7rem; color:{MUTED};">Real-time Delay Analytics</div>
             </div>
         </div>
@@ -37,7 +35,7 @@ def render_sidebar(predictor):
                     "color": MUTED, "margin": "2px 0",
                 },
                 "nav-link-selected": {
-                    "background": f"linear-gradient(135deg, {DB_RED}, #cc0012)",
+                    "background": ACCENT,
                     "color": "white", "font-weight": "600",
                 },
             },
@@ -52,17 +50,16 @@ def render_sidebar(predictor):
         auc = metrics.get(best, {}).get("roc_auc", 0)
 
         st.markdown(f"""
-        <div style="background:{CARD}; border:1px solid rgba(255,255,255,0.06); border-radius:16px;
+        <div style="background:{CARD}; border:1px solid {CARD2}; border-radius:8px;
                     padding:1rem 1.25rem; margin-bottom:1rem;">
-            <div style="font-size:0.7rem; font-weight:600; color:{MUTED}; text-transform:uppercase;
-                        letter-spacing:0.5px; margin-bottom:0.75rem;">📊 Model Performance</div>
+            <div style="font-size:0.7rem; font-weight:600; color:{MUTED}; margin-bottom:0.75rem;">Model Performance</div>
             <div style="display:flex; justify-content:space-between; margin-bottom:0.5rem;">
                 <div style="font-size:0.75rem; color:{MUTED};">Accuracy</div>
-                <div style="font-size:1.1rem; font-weight:700; color:{TEXT};">{acc*100:.1f}%</div>
+                <div style="font-size:1.1rem; font-weight:700; color:{TEXT}; font-family:'{FONT_MONO}';">{acc*100:.1f}%</div>
             </div>
             <div style="display:flex; justify-content:space-between;">
                 <div style="font-size:0.75rem; color:{MUTED};">ROC-AUC</div>
-                <div style="font-size:1.1rem; font-weight:700; color:{TEXT};">{('%.3f' % auc) if auc else 'N/A'}</div>
+                <div style="font-size:1.1rem; font-weight:700; color:{TEXT}; font-family:'{FONT_MONO}';">{('%.3f' % auc) if auc else 'N/A'}</div>
             </div>
             <div style="margin-top:0.5rem; font-size:0.65rem; color:{MUTED};">
                 Best: {best}
@@ -72,17 +69,16 @@ def render_sidebar(predictor):
 
         # Key Features Card
         st.markdown(f"""
-        <div style="background:{CARD}; border:1px solid rgba(255,255,255,0.06); border-radius:16px;
+        <div style="background:{CARD}; border:1px solid {CARD2}; border-radius:8px;
                     padding:1rem 1.25rem; margin-bottom:1rem;">
-            <div style="font-size:0.7rem; font-weight:600; color:{MUTED}; text-transform:uppercase;
-                        letter-spacing:0.5px; margin-bottom:0.75rem;">🔑 ML Features</div>
+            <div style="font-size:0.7rem; font-weight:600; color:{MUTED}; margin-bottom:0.75rem;">ML Features</div>
             <div style="display:grid; grid-template-columns:1fr 1fr; gap:4px 12px; font-size:0.75rem;">
-                <div style="color:{MUTED};">⏰ Hour, DOW, Month</div>
-                <div style="color:{MUTED};">📅 Season, Holiday</div>
-                <div style="color:{MUTED};">🚄 Rush Hour Ind.</div>
-                <div style="color:{MUTED};">📊 Hist. Delay Rate</div>
-                <div style="color:{MUTED};">🔄 Cascading Delay</div>
-                <div style="color:{MUTED};">🌤️ Weather Data</div>
+                <div style="color:{MUTED};">Hour, DOW, Month</div>
+                <div style="color:{MUTED};">Season, Holiday</div>
+                <div style="color:{MUTED};">Rush Hour</div>
+                <div style="color:{MUTED};">Hist. Delay Rate</div>
+                <div style="color:{MUTED};">Cascading Delay</div>
+                <div style="color:{MUTED};">Weather Data</div>
             </div>
         </div>
         """, unsafe_allow_html=True)
@@ -91,19 +87,16 @@ def render_sidebar(predictor):
         st.markdown(f"""
         <div style="margin-top:auto; padding-top:1rem;">
             <div style="display:flex; align-items:center; gap:6px; font-size:0.7rem; color:{MUTED};">
-                <span style="width:7px; height:7px; border-radius:50%; background:#22C55E; animation:pulse 2s infinite;"></span>
+                <span style="width:6px; height:6px; border-radius:50%; background:#22C55E;"></span>
                 System Online
             </div>
-            <div style="font-size:0.65rem; color:{MUTED}; margin-top:4px;">
+            <div style="font-size:0.65rem; color:{MUTED}; font-family:'{FONT_MONO}'; margin-top:4px;">
                 {datetime.now().strftime('%Y-%m-%d %H:%M')}
             </div>
             <div style="font-size:0.6rem; color:{MUTED}; margin-top:8px;">
                 Data: DB AG (CC BY 4.0) · DWD (CC BY 4.0)
             </div>
         </div>
-        <style>
-            @keyframes pulse {{ 0%, 100% {{ opacity: 1; }} 50% {{ opacity: 0.3; }} }}
-        </style>
         """, unsafe_allow_html=True)
 
     return selected

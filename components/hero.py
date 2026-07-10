@@ -1,5 +1,5 @@
 import streamlit as st
-from components.styles import DB_RED, TEXT, MUTED, CARD, CARD2, GREEN, ORANGE, RED
+from components.styles import TEXT, MUTED, CARD, CARD2, GREEN, ORANGE, RED
 
 def render_probability_ring(prob: float, size: int = 130, stroke: int = 8):
     color = GREEN if prob < 0.4 else ORANGE if prob < 0.7 else RED
