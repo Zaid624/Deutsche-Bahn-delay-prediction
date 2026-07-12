@@ -260,7 +260,9 @@ def model_tab(predictor):
         st.info("No saved model metrics found. Run `python src/train.py` to generate them.")
         return
 
-    best = metrics.get("_best_model", "N/A")
+    # Prefer the artifact used by live inference; selection metadata may name
+    # a comparison-only fallback model.
+    best = metrics.get("_serving_model", metrics.get("_best_model", "N/A"))
     rows = metrics.get("_training_rows", "N/A")
     split = metrics.get("_split_date", "N/A")
 

@@ -1,36 +1,238 @@
 {
   "Logistic Regression": {
-    "accuracy": 0.73382309646234,
-    "precision": 0.7447417955642851,
-    "recall": 0.6615102788520253,
-    "f1": 0.7006629349307422,
-    "roc_auc": 0.8078261123311766
+    "accuracy": 0.728030837275858,
+    "precision": 0.8439830488411184,
+    "recall": 0.5182896688087,
+    "f1": 0.6422028264922852,
+    "roc_auc": 0.807835913880586,
+    "brier_score": 0.17597265606976037,
+    "threshold": 0.6200000000000003,
+    "tn": 70685,
+    "fp": 6590,
+    "fn": 33133,
+    "tp": 35649
   },
   "XGBoost (default)": {
-    "accuracy": 0.746297678303676,
-    "precision": 0.7509769487556758,
-    "recall": 0.690107877060859,
-    "f1": 0.7192569077726174,
-    "roc_auc": 0.8235306861458048
+    "accuracy": 0.7410668437664747,
+    "precision": 0.8425641139114465,
+    "recall": 0.553604140618185,
+    "f1": 0.6681816187760474,
+    "roc_auc": 0.8235804416639705,
+    "brier_score": 0.16823044121200664,
+    "threshold": 0.6200000000000003,
+    "tn": 70160,
+    "fp": 7115,
+    "fn": 30704,
+    "tp": 38078
   },
   "XGBoost (tuned)": {
-    "accuracy": 0.7469960357942447,
-    "precision": 0.7516166263498237,
-    "recall": 0.6911546625570644,
-    "f1": 0.7201187599881846,
-    "roc_auc": 0.824224735992064
+    "accuracy": 0.7415734952792403,
+    "precision": 0.8434132200314236,
+    "recall": 0.5541129946788403,
+    "f1": 0.6688192610400892,
+    "roc_auc": 0.8238588035788144,
+    "brier_score": 0.16805290976688914,
+    "threshold": 0.6200000000000003,
+    "tn": 70199,
+    "fp": 7076,
+    "fn": 30669,
+    "tp": 38113
   },
   "XGBoost + Weather": {
-    "accuracy": 0.7468591029529568,
-    "precision": 0.7539154174050481,
-    "recall": 0.6865604373237184,
-    "f1": 0.7186632069944224,
-    "roc_auc": 0.8243025625125697
+    "accuracy": 0.7414228691538235,
+    "precision": 0.8451096027595416,
+    "recall": 0.5521066558111134,
+    "f1": 0.6678860680461145,
+    "roc_auc": 0.8239267138772481,
+    "brier_score": 0.16792531529621368,
+    "threshold": 0.6200000000000003,
+    "tn": 70315,
+    "fp": 6960,
+    "fn": 30807,
+    "tp": 37975
+  },
+  "XGBoost + Weather (no realtime cascade)": {
+    "accuracy": 0.6187515832859773,
+    "precision": 0.6805724054262711,
+    "recall": 0.3588584222616382,
+    "f1": 0.46992860542598763,
+    "roc_auc": 0.6956913083794269,
+    "brier_score": 0.22002025564897143,
+    "threshold": 0.6200000000000003,
+    "tn": 65690,
+    "fp": 11585,
+    "fn": 44099,
+    "tp": 24683
   },
   "_best_model": "XGBoost + Weather",
-  "_training_date": "2026-07-08 21:28:37.103236",
-  "_training_rows": 812963,
+  "_serving_model": "XGBoost + Weather",
+  "_training_date": "2026-07-12 13:30:57.390821",
+  "_training_rows": 666906,
+  "_holdout_rows": 146057,
   "_split_date": "2025-09-01",
+  "_threshold_objective": "accuracy",
+  "_selected_threshold": 0.6200000000000003,
+  "_fallback_threshold": 0.6200000000000003,
+  "_rolling_validation": {
+    "objective": "accuracy",
+    "folds": [
+      {
+        "accuracy": 0.7474564402520905,
+        "precision": 0.7644996886746765,
+        "recall": 0.503386175898931,
+        "f1": 0.6070555489429494,
+        "roc_auc": 0.7888203107943297,
+        "brier_score": 0.17872446404638104,
+        "threshold": 0.6200000000000003,
+        "tn": 93871,
+        "fp": 10212,
+        "fn": 32705,
+        "tp": 33151,
+        "fold": 1,
+        "validation_start": "2024-10-15",
+        "validation_end": "2025-01-30"
+      },
+      {
+        "accuracy": 0.7604454305386406,
+        "precision": 0.770828284786507,
+        "recall": 0.5123459772892003,
+        "f1": 0.6155528248396241,
+        "roc_auc": 0.8073945876362226,
+        "brier_score": 0.16639933193647014,
+        "threshold": 0.5900000000000003,
+        "tn": 94320,
+        "fp": 9457,
+        "fn": 30276,
+        "tp": 31809,
+        "fold": 2,
+        "validation_start": "2025-01-30",
+        "validation_end": "2025-05-17"
+      },
+      {
+        "accuracy": 0.7515409113476466,
+        "precision": 0.8034817942793403,
+        "recall": 0.5641047155563014,
+        "f1": 0.6628434336795057,
+        "roc_auc": 0.8143616746978265,
+        "brier_score": 0.17280275094886943,
+        "threshold": 0.6200000000000003,
+        "tn": 83788,
+        "fp": 9866,
+        "fn": 31170,
+        "tp": 40338,
+        "fold": 3,
+        "validation_start": "2025-05-17",
+        "validation_end": "2025-08-31"
+      }
+    ],
+    "summary": {
+      "accuracy": {
+        "mean": 0.7531475940461259,
+        "std": 0.005423070417897824
+      },
+      "precision": {
+        "mean": 0.779603255913508,
+        "std": 0.017081202690932207
+      },
+      "recall": {
+        "mean": 0.5266122895814775,
+        "std": 0.026762299531822763
+      },
+      "f1": {
+        "mean": 0.6284839358206931,
+        "std": 0.02454223902103424
+      },
+      "roc_auc": {
+        "mean": 0.8035255243761262,
+        "std": 0.010780153226977902
+      },
+      "brier_score": {
+        "mean": 0.17264218231057352,
+        "std": 0.0050329949398870075
+      }
+    },
+    "selected_threshold": 0.6200000000000003
+  },
+  "_fallback_rolling_validation": {
+    "objective": "accuracy",
+    "folds": [
+      {
+        "accuracy": 0.6312676901711791,
+        "precision": 0.5543456067515143,
+        "recall": 0.2473578717201166,
+        "f1": 0.3420759748850297,
+        "roc_auc": 0.6473157792087876,
+        "brier_score": 0.23610903323026175,
+        "threshold": 0.6700000000000004,
+        "tn": 90987,
+        "fp": 13096,
+        "fn": 49566,
+        "tp": 16290,
+        "fold": 1,
+        "validation_start": "2024-10-15",
+        "validation_end": "2025-01-30"
+      },
+      {
+        "accuracy": 0.6647936236148123,
+        "precision": 0.6003899842149246,
+        "recall": 0.31244261899009423,
+        "f1": 0.41100069919698284,
+        "roc_auc": 0.6852099308109898,
+        "brier_score": 0.21749103029290268,
+        "threshold": 0.6200000000000003,
+        "tn": 90866,
+        "fp": 12911,
+        "fn": 42687,
+        "tp": 19398,
+        "fold": 2,
+        "validation_start": "2025-01-30",
+        "validation_end": "2025-05-17"
+      },
+      {
+        "accuracy": 0.6405650210096754,
+        "precision": 0.6175622035046955,
+        "recall": 0.4460200257313867,
+        "f1": 0.5179573376206832,
+        "roc_auc": 0.6891676414718071,
+        "brier_score": 0.22492079444313018,
+        "threshold": 0.6200000000000003,
+        "tn": 73903,
+        "fp": 19751,
+        "fn": 39614,
+        "tp": 31894,
+        "fold": 3,
+        "validation_start": "2025-05-17",
+        "validation_end": "2025-08-31"
+      }
+    ],
+    "summary": {
+      "accuracy": {
+        "mean": 0.6455421115985556,
+        "std": 0.014132129501344817
+      },
+      "precision": {
+        "mean": 0.5907659314903781,
+        "std": 0.02669021442897772
+      },
+      "recall": {
+        "mean": 0.33527350548053253,
+        "std": 0.08269461849702942
+      },
+      "f1": {
+        "mean": 0.42367800390089855,
+        "std": 0.0723606660203114
+      },
+      "roc_auc": {
+        "mean": 0.6738977838305281,
+        "std": 0.018865631815576964
+      },
+      "brier_score": {
+        "mean": 0.2261736193220982,
+        "std": 0.007652219110684983
+      }
+    },
+    "selected_threshold": 0.6200000000000003
+  },
   "_features": {
     "numeric": [
       "hour",
@@ -60,39 +262,43 @@
       "has_planned_times"
     ]
   },
+  "_fallback_model": {
+    "path": "models\\xgb_weather_no_cascade.joblib",
+    "reason": "missing realtime cascading delay"
+  },
   "_feature_importance": {
-    "prev_delayed_1": 0.7545132040977478,
-    "prev_delay_min": 0.06450973451137543,
-    "is_first_stop": 0.023881956934928894,
-    "hist_delay_rate": 0.017226960510015488,
-    "station_name_Berlin-Spandau": 0.015112525783479214,
-    "station_name_K\u00f6ln Hbf": 0.012286323122680187,
-    "station_name_Frankfurt (Main) Hbf": 0.010340479202568531,
-    "station_name_D\u00fcsseldorf Hbf": 0.010233202017843723,
-    "station_name_Kassel-Wilhelmsh\u00f6he": 0.009021061472594738,
-    "is_holiday": 0.007661959622055292,
-    "planned_dwell_minutes": 0.005596167407929897,
-    "station_name_Hamburg Hbf": 0.005592279601842165,
-    "has_planned_times_1": 0.005579483229666948,
-    "season_winter": 0.0054617226123809814,
-    "station_name_Hannover Hbf": 0.005167835857719183,
-    "hour": 0.005036885384470224,
-    "station_name_N\u00fcrnberg Hbf": 0.004496694542467594,
-    "station_name_M\u00fcnchen Hbf": 0.004385259002447128,
-    "train_count": 0.00325208087451756,
-    "month": 0.0031548389233648777,
-    "precipitation_mm": 0.0029593855142593384,
-    "season_spring": 0.0027486085891723633,
-    "season_summer": 0.0027133289258927107,
-    "is_weekend": 0.002503354102373123,
-    "temperature_c": 0.0022803442552685738,
-    "sunshine_minutes": 0.002030123956501484,
-    "is_rush_hour": 0.0019570020958781242,
-    "day_of_week": 0.001855021226219833,
-    "pressure_hpa": 0.0018334932392463088,
-    "humidity_pct": 0.0017296953592449427,
-    "wind_speed_ms": 0.0016624844865873456,
-    "wind_direction": 0.0016549696447327733,
-    "cloud_cover_pct": 0.0015616202726960182
+    "prev_delayed_1": 0.7841114401817322,
+    "prev_delay_min": 0.05789186805486679,
+    "is_first_stop": 0.019478317350149155,
+    "hist_delay_rate": 0.01587250828742981,
+    "station_name_Berlin-Spandau": 0.012817895971238613,
+    "station_name_K\u00f6ln Hbf": 0.011327979154884815,
+    "station_name_Frankfurt (Main) Hbf": 0.009583251550793648,
+    "station_name_D\u00fcsseldorf Hbf": 0.008824910037219524,
+    "station_name_Kassel-Wilhelmsh\u00f6he": 0.007877958938479424,
+    "is_holiday": 0.0075585562735795975,
+    "planned_dwell_minutes": 0.005039720796048641,
+    "station_name_Hamburg Hbf": 0.004923064261674881,
+    "season_winter": 0.004636053461581469,
+    "station_name_Hannover Hbf": 0.004600081592798233,
+    "hour": 0.0043292539194226265,
+    "has_planned_times_1": 0.004107062704861164,
+    "station_name_N\u00fcrnberg Hbf": 0.00405113073065877,
+    "station_name_M\u00fcnchen Hbf": 0.003952666185796261,
+    "month": 0.0028581528458744287,
+    "train_count": 0.0026709968224167824,
+    "season_summer": 0.0026138457469642162,
+    "season_spring": 0.002476438181474805,
+    "precipitation_mm": 0.002175923902541399,
+    "temperature_c": 0.0020334208384156227,
+    "sunshine_minutes": 0.0018054144456982613,
+    "is_rush_hour": 0.001761852647177875,
+    "is_weekend": 0.0016845115460455418,
+    "day_of_week": 0.0016357159474864602,
+    "pressure_hpa": 0.0015906889457255602,
+    "humidity_pct": 0.001518028904683888,
+    "wind_direction": 0.0014470512978732586,
+    "wind_speed_ms": 0.0014382563531398773,
+    "cloud_cover_pct": 0.0013058544136583805
   }
 }

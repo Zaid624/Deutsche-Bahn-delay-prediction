@@ -148,7 +148,13 @@ def render_model_comparison_table(models: dict):
     comp.index.name = "Model"
     comp = comp.reset_index()
 
-    metrics_cols = [c for c in comp.columns if c not in ("Model",) and not c.startswith("_")]
+    # Keep the dashboard comparison focused on normalized quality scores.
+    # Metrics JSON also carries thresholds and confusion-matrix counts for the
+    # detail panel, which should not be rendered as percentage bars here.
+    metrics_cols = [
+        c for c in ("accuracy", "precision", "recall", "f1", "roc_auc", "brier_score")
+        if c in comp.columns
+    ]
     display_cols = ["Model"] + [c for c in metrics_cols if c in comp.columns]
 
     gb = GridOptionsBuilder.from_dataframe(comp[display_cols])

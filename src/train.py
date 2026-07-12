@@ -1,9 +1,4 @@
-"""
-Model training pipeline for DB delay prediction (v2 — improved features).
-
-Features now include cascading delay, historical rates, and train
-frequency for significantly better accuracy.
-"""
+"""Leakage-safe, time-series training pipeline for DB delay prediction."""
 
 import json
 import sys
@@ -17,7 +12,7 @@ from sklearn.compose import ColumnTransformer
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import (
     accuracy_score,
-    classification_report,
+    brier_score_loss,
     confusion_matrix,
     f1_score,
     precision_score,
@@ -32,316 +27,259 @@ try:
 except ImportError:
     XGBClassifier = None  # type: ignore
 
-warnings.filterwarnings("ignore")
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from src.features import apply_aggregate_features, fit_aggregate_features
 
-# ---------------------------------------------------------------------------
-# Constants
-# ---------------------------------------------------------------------------
+warnings.filterwarnings("ignore")
+
 FEATURES_PATH = Path("data/features_v2.parquet")
 MODEL_DIR = Path("models")
 LOGREG_PATH = MODEL_DIR / "logreg_baseline.joblib"
 XGB_PATH = MODEL_DIR / "xgb_model.joblib"
 XGB_TUNED_PATH = MODEL_DIR / "xgb_tuned.joblib"
 XGB_WEATHER_PATH = MODEL_DIR / "xgb_weather.joblib"
+XGB_NO_CASCADE_PATH = MODEL_DIR / "xgb_weather_no_cascade.joblib"
+AGGREGATES_PATH = MODEL_DIR / "feature_aggregates.joblib"
 
 SPLIT_DATE = "2025-09-01"
 TARGET = "delay_binary"
 RANDOM_STATE = 42
+# The product KPI is accuracy. Recall/F1 remain reported, but are not allowed
+# to move the serving decision boundary away from the accuracy-optimal point.
+THRESHOLD_OBJECTIVE = "accuracy"
 
 NUMERIC_FEATURES = [
-    "hour",
-    "day_of_week",
-    "month",
-    "is_weekend",
-    "is_rush_hour",
-    "is_holiday",
-    "prev_delay_min",
-    "train_count",
-    "hist_delay_rate",
-    "planned_dwell_minutes",
-    "is_first_stop",
+    "hour", "day_of_week", "month", "is_weekend", "is_rush_hour",
+    "is_holiday", "prev_delay_min", "train_count", "hist_delay_rate",
+    "planned_dwell_minutes", "is_first_stop",
 ]
-
 WEATHER_FEATURES = [
-    "temperature_c",
-    "humidity_pct",
-    "precipitation_mm",
-    "wind_speed_ms",
-    "wind_direction",
-    "sunshine_minutes",
-    "cloud_cover_pct",
-    "pressure_hpa",
+    "temperature_c", "humidity_pct", "precipitation_mm", "wind_speed_ms",
+    "wind_direction", "sunshine_minutes", "cloud_cover_pct", "pressure_hpa",
 ]
-
 CATEGORIC_FEATURES = ["station_name", "season", "prev_delayed", "has_planned_times"]
+CASCADE_FEATURES = {"prev_delay_min", "is_first_stop", "prev_delayed"}
 
 
 def load_data() -> pd.DataFrame:
     df = pd.read_parquet(FEATURES_PATH)
+    df["time"] = pd.to_datetime(df["time"], utc=True)
     print(f"Loaded {len(df):,} rows from {FEATURES_PATH}")
-    return df
+    return df.sort_values("time").reset_index(drop=True)
 
 
-def prepare_features(df: pd.DataFrame):
-    train_df = df[df["time"] < SPLIT_DATE].copy()
-    test_df = df[df["time"] >= SPLIT_DATE].copy()
-    print(f"\nTime-based split: train <= {SPLIT_DATE}")
-    print(
-        f"  Train: {len(train_df):,} rows ({train_df[TARGET].mean() * 100:.1f}% delayed)"
-    )
-    print(
-        f"  Test:  {len(test_df):,} rows ({test_df[TARGET].mean() * 100:.1f}% delayed)"
-    )
-
-    ALL_FEATURES = NUMERIC_FEATURES + WEATHER_FEATURES + CATEGORIC_FEATURES
-    X_train = train_df[[c for c in ALL_FEATURES if c in train_df.columns]]
-    y_train = train_df[TARGET]
-    X_test = test_df[[c for c in ALL_FEATURES if c in test_df.columns]]
-    y_test = test_df[TARGET]
-    return X_train, X_test, y_train, y_test
+def feature_columns(numeric_features=None, include_cascade=True):
+    numeric = list(numeric_features or NUMERIC_FEATURES)
+    categorical = list(CATEGORIC_FEATURES)
+    if not include_cascade:
+        numeric = [column for column in numeric if column not in CASCADE_FEATURES]
+        categorical = [column for column in categorical if column not in CASCADE_FEATURES]
+    return numeric, categorical
 
 
-def build_preprocessor(numeric_features=None):
-    if numeric_features is None:
-        numeric_features = NUMERIC_FEATURES
-    return ColumnTransformer(
-        [
-            ("num", StandardScaler(), numeric_features),
-            (
-                "cat",
-                OneHotEncoder(
-                    drop="first", sparse_output=False, handle_unknown="ignore"
-                ),
-                CATEGORIC_FEATURES,
-            ),
-        ]
-    )
+def build_preprocessor(numeric_features, categorical_features):
+    return ColumnTransformer([
+        ("num", StandardScaler(), numeric_features),
+        ("cat", OneHotEncoder(drop="first", sparse_output=False, handle_unknown="ignore"), categorical_features),
+    ])
 
 
-def evaluate_model(name: str, model, X_test, y_test):
-    y_pred = model.predict(X_test)
-    y_proba = model.predict_proba(X_test)[:, 1]
-    acc = accuracy_score(y_test, y_pred)
-    prec = precision_score(y_test, y_pred, zero_division="warn")
-    rec = recall_score(y_test, y_pred, zero_division="warn")
-    f1 = f1_score(y_test, y_pred, zero_division="warn")
-    auc = roc_auc_score(y_test, y_proba)
-    cm = confusion_matrix(y_test, y_pred)
-
-    print(f"  {'=' * 40}")
-    print(f"  {name}")
-    print(f"  {'=' * 40}")
-    print(f"  Accuracy:  {acc:.4f}")
-    print(f"  Precision: {prec:.4f}")
-    print(f"  Recall:    {rec:.4f}")
-    print(f"  F1:        {f1:.4f}")
-    print(f"  ROC-AUC:   {auc:.4f}")
-    print("\n  Confusion matrix:")
-    print(f"    TN={cm[0, 0]:,}  FP={cm[0, 1]:,}")
-    print(f"    FN={cm[1, 0]:,}  TP={cm[1, 1]:,}")
-    print("\n  Classification report:")
-    print(
-        f"  {classification_report(y_test, y_pred, target_names=['On time', 'Delayed'], zero_division='warn')}"
-    )
-
-    return {"accuracy": acc, "precision": prec, "recall": rec, "f1": f1, "roc_auc": auc}
+def prepare_split(train_df, validation_df, numeric_features=None, include_cascade=True):
+    """Fit aggregate features on the left side of a time split only."""
+    aggregates = fit_aggregate_features(train_df)
+    train = apply_aggregate_features(train_df, aggregates)
+    validation = apply_aggregate_features(validation_df, aggregates)
+    numeric, categorical = feature_columns(numeric_features, include_cascade)
+    selected = numeric + categorical
+    missing = [column for column in selected if column not in train.columns]
+    if missing:
+        raise ValueError(f"Required feature columns are missing: {missing}")
+    return train[selected], train[TARGET], validation[selected], validation[TARGET], numeric, categorical
 
 
-def train_logreg(X_train, y_train, X_test, y_test, numeric_features=None):
-    print("\n--- Logistic Regression (baseline) ---")
-    if numeric_features is None:
-        numeric_features = NUMERIC_FEATURES
-    pipeline = Pipeline(
-        [
-            ("preprocessor", build_preprocessor(numeric_features)),
-            (
-                "classifier",
-                LogisticRegression(
-                    class_weight="balanced",
-                    max_iter=2000,
-                    random_state=RANDOM_STATE,
-                    n_jobs=-1,
-                ),
-            ),
-        ]
-    )
+def select_threshold(y_true, probabilities, objective=THRESHOLD_OBJECTIVE):
+    """Choose a validation-only operating threshold for the stated objective."""
+    candidates = np.arange(0.20, 0.81, 0.01)
+    if objective == "accuracy":
+        scores = [accuracy_score(y_true, probabilities >= value) for value in candidates]
+    elif objective == "f1":
+        scores = [f1_score(y_true, probabilities >= value, zero_division=0) for value in candidates]
+    else:
+        raise ValueError(f"Unsupported threshold objective: {objective}")
+    return float(candidates[int(np.argmax(scores))])
+
+
+def evaluate_probabilities(y_true, probabilities, threshold):
+    predictions = (np.asarray(probabilities) >= threshold).astype(int)
+    tn, fp, fn, tp = confusion_matrix(y_true, predictions, labels=[0, 1]).ravel()
+    return {
+        "accuracy": float(accuracy_score(y_true, predictions)),
+        "precision": float(precision_score(y_true, predictions, zero_division=0)),
+        "recall": float(recall_score(y_true, predictions, zero_division=0)),
+        "f1": float(f1_score(y_true, predictions, zero_division=0)),
+        "roc_auc": float(roc_auc_score(y_true, probabilities)),
+        "brier_score": float(brier_score_loss(y_true, probabilities)),
+        "threshold": float(threshold),
+        "tn": int(tn), "fp": int(fp), "fn": int(fn), "tp": int(tp),
+    }
+
+
+def make_xgb(tuned=False, y_train=None):
+    if XGBClassifier is None:
+        raise ImportError("xgboost is required to train the production model")
+    neg = int((y_train == 0).sum())
+    pos = int((y_train == 1).sum())
+    params = {
+        "n_estimators": 550 if tuned else 300,
+        "max_depth": 7 if tuned else 6,
+        "learning_rate": 0.05 if tuned else 0.1,
+        "subsample": 0.8, "colsample_bytree": 0.8,
+        "min_child_weight": 3 if tuned else 1,
+        "reg_alpha": 0.1 if tuned else 0.0,
+        "reg_lambda": 2.0 if tuned else 1.0,
+        "scale_pos_weight": neg / max(pos, 1),
+        "random_state": RANDOM_STATE, "n_jobs": -1, "eval_metric": "logloss",
+    }
+    return XGBClassifier(**params)
+
+
+def fit_model(kind, X_train, y_train, numeric, categorical):
+    preprocessor = build_preprocessor(numeric, categorical)
+    if kind == "Logistic Regression":
+        classifier = LogisticRegression(class_weight="balanced", max_iter=2000, random_state=RANDOM_STATE, n_jobs=-1)
+    elif kind == "XGBoost (default)":
+        classifier = make_xgb(tuned=False, y_train=y_train)
+    else:
+        classifier = make_xgb(tuned=True, y_train=y_train)
+    pipeline = Pipeline([("preprocessor", preprocessor), ("classifier", classifier)])
     pipeline.fit(X_train, y_train)
-    metrics = evaluate_model("Logistic Regression", pipeline, X_test, y_test)
-    joblib.dump(pipeline, LOGREG_PATH)
-    print(f"  Saved to {LOGREG_PATH}")
-    return pipeline, metrics
+    return pipeline
 
 
-def train_xgboost(
-    X_train,
-    y_train,
-    X_test,
-    y_test,
-    tuned=False,
-    numeric_features=None,
-    label=None,
-    save_path=None,
+def rolling_windows(df, holdout_start, windows=3):
+    """Return expanding train / fixed validation windows before final holdout."""
+    history = df[df["time"] < pd.Timestamp(holdout_start, tz="UTC")]
+    start, end = history["time"].min(), history["time"].max()
+    span = (end - start) / (windows + 1)
+    result = []
+    for index in range(windows):
+        validation_start = start + span * (index + 1)
+        validation_end = start + span * (index + 2) if index < windows - 1 else end + pd.Timedelta(nanoseconds=1)
+        train = history[history["time"] < validation_start]
+        validation = history[(history["time"] >= validation_start) & (history["time"] < validation_end)]
+        if not train.empty and not validation.empty:
+            result.append((train, validation, str(validation_start.date()), str(validation_end.date())))
+    return result
+
+
+def run_rolling_validation(
+    df, model_kind="XGBoost + Weather", windows=3, include_cascade=True
 ):
-    """XGBoost with tuned hyperparameters + early stopping."""
-    if label is None:
-        label = "XGBoost (tuned)" if tuned else "XGBoost (default)"
-    if numeric_features is None:
-        numeric_features = NUMERIC_FEATURES
-    print(f"\n--- {label} ---")
-
-    # Scale pos weight: ratio of negative to positive
-    neg = (y_train == 0).sum()
-    pos = (y_train == 1).sum()
-
-    if tuned:
-        params = {
-            "n_estimators": 800,
-            "max_depth": 8,
-            "learning_rate": 0.05,
-            "subsample": 0.8,
-            "colsample_bytree": 0.8,
-            "min_child_weight": 3,
-            "reg_alpha": 0.1,
-            "reg_lambda": 2.0,
-            "gamma": 0.1,
-            "scale_pos_weight": neg / pos,
-            "random_state": RANDOM_STATE,
-            "n_jobs": -1,
-            "eval_metric": "logloss",
-            "early_stopping_rounds": 50,
-        }
-    else:
-        params = {
-            "n_estimators": 300,
-            "max_depth": 6,
-            "learning_rate": 0.1,
-            "subsample": 0.8,
-            "colsample_bytree": 0.8,
-            "scale_pos_weight": neg / pos,
-            "random_state": RANDOM_STATE,
-            "n_jobs": -1,
-            "eval_metric": "logloss",
-        }
-
-    if tuned:
-        preprocessor = build_preprocessor(numeric_features)
-        X_tr = preprocessor.fit_transform(X_train)
-        X_te = preprocessor.transform(X_test)
-        clf = XGBClassifier(**params)
-        clf.fit(
-            X_tr, y_train, eval_set=[(X_tr, y_train), (X_te, y_test)], verbose=False
+    """Assess the selected production family on strictly forward validation windows."""
+    fold_metrics, thresholds = [], []
+    for fold, (train, validation, start, end) in enumerate(rolling_windows(df, SPLIT_DATE, windows), start=1):
+        X_train, y_train, X_val, y_val, numeric, categorical = prepare_split(
+            train,
+            validation,
+            NUMERIC_FEATURES + WEATHER_FEATURES,
+            include_cascade=include_cascade,
         )
-        pipeline = Pipeline(
-            [
-                ("preprocessor", preprocessor),
-                ("classifier", clf),
-            ]
-        )
-        print(f"  Best iteration: {clf.best_iteration}")
-    else:
-        pipeline = Pipeline(
-            [
-                ("preprocessor", build_preprocessor(numeric_features)),
-                ("classifier", XGBClassifier(**params)),
-            ]
-        )
-        pipeline.fit(X_train, y_train)
+        model = fit_model(model_kind, X_train, y_train, numeric, categorical)
+        probabilities = model.predict_proba(X_val)[:, 1]
+        threshold = select_threshold(y_val, probabilities)
+        metrics = evaluate_probabilities(y_val, probabilities, threshold)
+        metrics.update({"fold": fold, "validation_start": start, "validation_end": end})
+        fold_metrics.append(metrics)
+        thresholds.append(threshold)
+        print(f"  Fold {fold}: AUC={metrics['roc_auc']:.4f}, F1={metrics['f1']:.4f}, threshold={threshold:.2f}")
+    summary = {
+        metric: {"mean": float(np.mean([row[metric] for row in fold_metrics])), "std": float(np.std([row[metric] for row in fold_metrics]))}
+        for metric in ("accuracy", "precision", "recall", "f1", "roc_auc", "brier_score")
+    }
+    return {"objective": THRESHOLD_OBJECTIVE, "folds": fold_metrics, "summary": summary, "selected_threshold": float(np.median(thresholds))}
 
-    metrics = evaluate_model(label, pipeline, X_test, y_test)
+
+def train_and_evaluate(name, train_df, test_df, numeric_features=None, include_cascade=True, threshold=0.5, save_path=None):
+    X_train, y_train, X_test, y_test, numeric, categorical = prepare_split(
+        train_df, test_df, numeric_features, include_cascade
+    )
+    model = fit_model(name, X_train, y_train, numeric, categorical)
+    metrics = evaluate_probabilities(y_test, model.predict_proba(X_test)[:, 1], threshold)
+    print(f"  {name}: accuracy={metrics['accuracy']:.4f}, AUC={metrics['roc_auc']:.4f}, F1={metrics['f1']:.4f}")
     if save_path:
-        joblib.dump(pipeline, save_path)
+        joblib.dump(model, save_path)
         print(f"  Saved to {save_path}")
-    return pipeline, metrics
+    return model, metrics
 
 
 def main():
-    print("=" * 50)
-    print("DB Delay Predictor - Model Training v3 (with weather)")
-    print("=" * 50)
-
+    print("DB Delay Predictor - Leakage-safe model training")
+    MODEL_DIR.mkdir(parents=True, exist_ok=True)
     df = load_data()
-    X_train, X_test, y_train, y_test = prepare_features(df)
+    train_df = df[df["time"] < pd.Timestamp(SPLIT_DATE, tz="UTC")].copy()
+    test_df = df[df["time"] >= pd.Timestamp(SPLIT_DATE, tz="UTC")].copy()
+    if train_df.empty or test_df.empty:
+        raise ValueError("Time split produced an empty train or holdout period")
+
+    print("\nRolling validation (aggregate features refit per fold):")
+    rolling = run_rolling_validation(df)
+    threshold = rolling["selected_threshold"]
+    print(f"Selected holdout threshold from rolling validation: {threshold:.2f}")
+
+    print("\nRolling validation for missing-realtime fallback:")
+    fallback_rolling = run_rolling_validation(df, include_cascade=False)
+    fallback_threshold = fallback_rolling["selected_threshold"]
+    print(f"Selected fallback threshold from rolling validation: {fallback_threshold:.2f}")
 
     results = {}
-    # Baseline models without weather
-    _, results["Logistic Regression"] = train_logreg(X_train, y_train, X_test, y_test)
-    _, results["XGBoost (default)"] = train_xgboost(
-        X_train, y_train, X_test, y_test, tuned=False
+    _, results["Logistic Regression"] = train_and_evaluate("Logistic Regression", train_df, test_df, threshold=threshold, save_path=LOGREG_PATH)
+    _, results["XGBoost (default)"] = train_and_evaluate("XGBoost (default)", train_df, test_df, threshold=threshold, save_path=XGB_PATH)
+    _, results["XGBoost (tuned)"] = train_and_evaluate("XGBoost (tuned)", train_df, test_df, threshold=threshold, save_path=XGB_TUNED_PATH)
+    weather_model, results["XGBoost + Weather"] = train_and_evaluate(
+        "XGBoost + Weather", train_df, test_df, NUMERIC_FEATURES + WEATHER_FEATURES, threshold=threshold, save_path=XGB_WEATHER_PATH
     )
-    _, results["XGBoost (tuned)"] = train_xgboost(
-        X_train, y_train, X_test, y_test, tuned=True
+    _, results["XGBoost + Weather (no realtime cascade)"] = train_and_evaluate(
+        "XGBoost + Weather", train_df, test_df, NUMERIC_FEATURES + WEATHER_FEATURES,
+        include_cascade=False, threshold=fallback_threshold, save_path=XGB_NO_CASCADE_PATH,
     )
+    # The predictor reads precisely these training-period lookups rather than
+    # recomputing aggregates over all rows in the operational database.
+    joblib.dump(fit_aggregate_features(train_df), AGGREGATES_PATH)
 
-    # Model with weather features
-    print("\n" + "-" * 50)
-    print("XGBoost with Weather Features")
-    print("-" * 50)
-    all_features = NUMERIC_FEATURES + WEATHER_FEATURES
+    # The holdout is reporting-only. Do not select the deployed model from it;
+    # its operating threshold and family were assessed on the rolling windows.
+    best_model = "XGBoost + Weather"
+    metrics_data = {name: values for name, values in results.items()}
+    metrics_data.update({
+        "_best_model": best_model,
+        "_serving_model": "XGBoost + Weather",
+        "_training_date": str(pd.Timestamp.now()),
+        "_training_rows": int(len(train_df)),
+        "_holdout_rows": int(len(test_df)),
+        "_split_date": SPLIT_DATE,
+        "_threshold_objective": THRESHOLD_OBJECTIVE,
+        "_selected_threshold": threshold,
+        "_fallback_threshold": fallback_threshold,
+        "_rolling_validation": rolling,
+        "_fallback_rolling_validation": fallback_rolling,
+        "_features": {"numeric": NUMERIC_FEATURES + WEATHER_FEATURES, "categorical": CATEGORIC_FEATURES},
+        "_fallback_model": {"path": str(XGB_NO_CASCADE_PATH), "reason": "missing realtime cascading delay"},
+    })
 
-    _, results["XGBoost + Weather"] = train_xgboost(
-        X_train,
-        y_train,
-        X_test,
-        y_test,
-        tuned=True,
-        numeric_features=all_features,
-        label="XGBoost + Weather",
-        save_path=XGB_WEATHER_PATH,
-    )
-
-    print("\n" + "=" * 50)
-    print("Model Comparison Summary")
-    print("=" * 50)
-    comparison = pd.DataFrame(results).round(4)
-    print(comparison.to_string())
-
-    # Save metrics for UI display
-    metrics_data = {}
-    for name, m in results.items():
-        metrics_data[name] = {k: float(v) for k, v in m.items()}
-
-    # Add best model name
-    best_model = max(results, key=lambda k: results[k]["roc_auc"])
-    metrics_data["_best_model"] = best_model
-    metrics_data["_training_date"] = str(pd.Timestamp.now())
-    metrics_data["_training_rows"] = len(df)
-    metrics_data["_split_date"] = SPLIT_DATE
-    metrics_data["_features"] = {
-        "numeric": NUMERIC_FEATURES + WEATHER_FEATURES,
-        "categorical": CATEGORIC_FEATURES,
-    }
-
-    # Extract feature importance from best XGBoost model
     try:
-        xgb_model = joblib.load(XGB_WEATHER_PATH)
-        xgb_clf = xgb_model.named_steps.get("classifier")
-        if xgb_clf and hasattr(xgb_clf, "feature_importances_"):
-            preprocessor = xgb_model.named_steps.get("preprocessor")
-            if preprocessor:
-                num_features = preprocessor.transformers_[0][2]
-                cat_encoder = preprocessor.transformers_[1][1]
-                cat_features = preprocessor.transformers_[1][2]
-                cat_names = []
-                if hasattr(cat_encoder, "get_feature_names_out"):
-                    cat_names = cat_encoder.get_feature_names_out(cat_features).tolist()
-                all_names = list(num_features) + cat_names
-                if len(all_names) == len(xgb_clf.feature_importances_):
-                    fi_list = sorted(
-                        zip(all_names, xgb_clf.feature_importances_),
-                        key=lambda x: x[1], reverse=True,
-                    )
-                    metrics_data["_feature_importance"] = {
-                        name: float(imp) for name, imp in fi_list
-                    }
-    except Exception as e:
-        print(f"  Warning: Could not extract feature importance: {e}")
+        classifier = weather_model.named_steps["classifier"]
+        preprocessor = weather_model.named_steps["preprocessor"]
+        numeric = preprocessor.transformers_[0][2]
+        encoder = preprocessor.transformers_[1][1]
+        categorical = preprocessor.transformers_[1][2]
+        names = list(numeric) + encoder.get_feature_names_out(categorical).tolist()
+        metrics_data["_feature_importance"] = {name: float(value) for name, value in sorted(zip(names, classifier.feature_importances_), key=lambda item: item[1], reverse=True)}
+    except Exception as exc:
+        print(f"Warning: could not extract feature importance: {exc}")
 
-    metrics_path = MODEL_DIR / "model_metrics.json"
-    with open(metrics_path, "w") as f:
-        json.dump(metrics_data, f, indent=2, default=str)
-    print(f"\nMetrics saved to {metrics_path}")
-    print(f"Models saved to {MODEL_DIR}/")
+    with open(MODEL_DIR / "model_metrics.json", "w") as file:
+        json.dump(metrics_data, file, indent=2)
+    print(f"Metrics saved to {MODEL_DIR / 'model_metrics.json'}")
 
 
 if __name__ == "__main__":

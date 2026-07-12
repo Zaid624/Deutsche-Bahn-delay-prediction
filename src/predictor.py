@@ -54,9 +54,28 @@ class DelayPredictor:
         logger.info("Loading model from %s", self.model_path)
         self.model = joblib.load(self.model_path)
         logger.info("Model loaded: %s", type(self.model).__name__)
+        self.threshold, self.fallback_threshold = self._load_serving_thresholds()
+        fallback_path = self.model_path.parent / "xgb_weather_no_cascade.joblib"
+        self.no_cascade_model = joblib.load(fallback_path) if fallback_path.exists() else None
+        if self.no_cascade_model is None:
+            logger.warning("No no-cascade fallback model found; missing realtime data will use the primary model")
 
-        # Load historical statistics for features
-        self._load_historical_stats()
+        # Prefer lookup tables fitted on the final training period. The
+        # database query is retained as a backwards-compatible fallback.
+        aggregates_path = self.model_path.parent / "feature_aggregates.joblib"
+        self.feature_aggregates = joblib.load(aggregates_path) if aggregates_path.exists() else None
+        if self.feature_aggregates is None:
+            self._load_historical_stats()
+
+    def _load_serving_thresholds(self) -> tuple[float, float]:
+        """Load validation-selected thresholds for primary and fallback models."""
+        try:
+            with open(self.model_path.parent / "model_metrics.json") as file:
+                metrics = json.load(file)
+                primary = float(metrics.get("_selected_threshold", 0.5))
+                return primary, float(metrics.get("_fallback_threshold", primary))
+        except (OSError, ValueError, json.JSONDecodeError):
+            return 0.5, 0.5
 
     def _load_historical_stats(self):
         """Load precomputed historical statistics from database."""
@@ -78,12 +97,14 @@ class DelayPredictor:
 
             # Compute global mean delay rate as fallback
             self.global_delay_rate = self.hist_stats["delay_rate"].mean()
+            self.global_train_count = self.hist_stats["train_count"].median()
             logger.info("Global delay rate: %.2f%%", self.global_delay_rate * 100)
 
         except Exception as e:
             logger.warning("Failed to load historical stats: %s", e)
             self.hist_stats = pd.DataFrame()
             self.global_delay_rate = 0.30  # Fallback: 30% delay rate
+            self.global_train_count = 50.0
 
     def get_available_trains(
         self,
@@ -298,18 +319,27 @@ class DelayPredictor:
             features["is_holiday"] = 0
 
         # Historical delay rate for (station, hour, day_of_week)
-        hist_match = self.hist_stats[
-            (self.hist_stats["station_name"] == station_name)
-            & (self.hist_stats["hour"] == hour)
-            & (self.hist_stats["day_of_week"] == timestamp.dayofweek)
-        ]
-
-        if len(hist_match) > 0:
-            features["hist_delay_rate"] = hist_match.iloc[0]["delay_rate"]
-            features["train_count"] = hist_match.iloc[0]["train_count"]
+        if self.feature_aggregates is not None:
+            rate_key = (station_name, hour, timestamp.dayofweek)
+            count_key = (station_name, hour)
+            features["hist_delay_rate"] = self.feature_aggregates["hist_delay_rate"].get(
+                rate_key, self.feature_aggregates["global_delay_rate"]
+            )
+            features["train_count"] = self.feature_aggregates["train_count"].get(
+                count_key, self.feature_aggregates["global_train_count"]
+            )
         else:
-            features["hist_delay_rate"] = self.global_delay_rate
-            features["train_count"] = 50  # Reasonable default
+            hist_match = self.hist_stats[
+                (self.hist_stats["station_name"] == station_name)
+                & (self.hist_stats["hour"] == hour)
+                & (self.hist_stats["day_of_week"] == timestamp.dayofweek)
+            ]
+            if len(hist_match) > 0:
+                features["hist_delay_rate"] = hist_match.iloc[0]["delay_rate"]
+                features["train_count"] = hist_match.iloc[0]["train_count"]
+            else:
+                features["hist_delay_rate"] = self.global_delay_rate
+                features["train_count"] = self.global_train_count
 
         # Cascading delay features from real-time data
         # If the train actually arrived late, that delay cascaded from the prev segment
@@ -322,7 +352,9 @@ class DelayPredictor:
             # No real-time data — conservative defaults
             features["prev_delay_min"] = 0.0
             features["prev_delayed"] = -1  # -1 = unknown
-            features["is_first_stop"] = 1
+            # Unknown is not the same as a first stop. The fallback model
+            # excludes cascade fields entirely when this is used.
+            features["is_first_stop"] = -1
 
         # Planned dwell time from real-time data (pt difference)
         actual_depart = live_data.get("actual_departure_delay_min")
@@ -366,12 +398,20 @@ class DelayPredictor:
             Dictionary with prediction results
         """
         try:
-            # Get probability
-            proba = self.model.predict_proba(features)[0]
+            # Missing realtime cascade data is served by a model trained
+            # without those unavailable fields instead of treating it as a
+            # first-stop observation.
+            use_fallback = (
+                features.iloc[0].get("prev_delayed") == -1
+                and self.no_cascade_model is not None
+            )
+            active_model = self.no_cascade_model if use_fallback else self.model
+            proba = active_model.predict_proba(features)[0]
             prob_delayed = float(proba[1])
+            threshold = self.fallback_threshold if use_fallback else self.threshold
 
             # Binary prediction
-            delayed = prob_delayed > 0.5
+            delayed = prob_delayed >= threshold
 
             # Confidence (distance from 0.5)
             confidence_score = abs(prob_delayed - 0.5) * 2  # 0 to 1 scale
@@ -387,6 +427,8 @@ class DelayPredictor:
                 "probability": prob_delayed,
                 "confidence": confidence,
                 "confidence_score": confidence_score,
+                "threshold": threshold,
+                "model_path": "no_realtime_cascade" if use_fallback else "realtime_cascade",
             }
 
         except Exception as e:

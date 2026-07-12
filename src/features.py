@@ -46,7 +46,6 @@ except ImportError:
     country_holidays = None  # type: ignore
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from src.database import engine
 
 # ---------------------------------------------------------------------------
 # Configuration
@@ -146,12 +145,10 @@ def engineer_features(
     features["prev_delayed"] = features["prev_delayed"].fillna(-1).astype(int)
     features["prev_delay_min"] = features["prev_delay_min"].fillna(0)
 
-    # ---------------------------------------------------------------
-    # HIGH-IMPACT FEATURE 2: Train frequency at (station, hour)
-    # ---------------------------------------------------------------
-    freq = features.groupby(["station_name", "hour"]).size()
-    freq.name = "train_count"
-    features = features.join(freq, on=["station_name", "hour"])
+    # Aggregate features are deliberately not calculated here.  They need to
+    # be fitted on the training period of each split (see
+    # ``fit_aggregate_features``) so a row never receives information from a
+    # future validation/test period.
 
     # ---------------------------------------------------------------
     # FEATURE 3: Is this the first stop of the ride?
@@ -241,24 +238,60 @@ def add_historical_rates(train_df: pd.DataFrame, test_df: pd.DataFrame):
     The feature captures: 'at this station, on this hour and day-of-week,
     what fraction of trains historically were delayed?'
     """
-    rate = train_df.groupby(["station_name", "hour", "day_of_week"])[
-        "delay_binary"
-    ].mean()
-    rate.name = "hist_delay_rate"
+    aggregates = fit_aggregate_features(train_df)
+    return (
+        apply_aggregate_features(train_df, aggregates),
+        apply_aggregate_features(test_df, aggregates),
+    )
 
-    train_df = train_df.join(rate, on=["station_name", "hour", "day_of_week"])
-    test_df = test_df.join(rate, on=["station_name", "hour", "day_of_week"])
 
-    # Fill any station-hour-dow without historical data with global mean
-    global_rate = train_df["delay_binary"].mean()
-    train_df["hist_delay_rate"] = train_df["hist_delay_rate"].fillna(global_rate)
-    test_df["hist_delay_rate"] = test_df["hist_delay_rate"].fillna(global_rate)
+def fit_aggregate_features(train_df: pd.DataFrame) -> dict:
+    """Fit delay-rate and frequency aggregates using historical rows only.
 
-    return train_df, test_df
+    The returned object is intentionally plain pandas data so it can be used
+    by both batch training and feature generation without serialising target
+    values into individual future rows.
+    """
+    rate = (
+        train_df.groupby(["station_name", "hour", "day_of_week"])["delay_binary"]
+        .mean()
+        .rename("hist_delay_rate")
+    )
+    frequency = (
+        train_df.groupby(["station_name", "hour"])
+        .size()
+        .rename("train_count")
+    )
+    return {
+        "hist_delay_rate": rate,
+        "train_count": frequency,
+        "global_delay_rate": float(train_df["delay_binary"].mean()),
+        "global_train_count": float(frequency.median()) if not frequency.empty else 0.0,
+    }
+
+
+def apply_aggregate_features(df: pd.DataFrame, aggregates: dict) -> pd.DataFrame:
+    """Apply training-fitted aggregates without looking at ``df`` targets."""
+    result = df.drop(columns=["hist_delay_rate", "train_count"], errors="ignore").copy()
+    result = result.join(
+        aggregates["hist_delay_rate"], on=["station_name", "hour", "day_of_week"]
+    )
+    result = result.join(aggregates["train_count"], on=["station_name", "hour"])
+    result["hist_delay_rate"] = result["hist_delay_rate"].fillna(
+        aggregates["global_delay_rate"]
+    )
+    result["train_count"] = result["train_count"].fillna(
+        aggregates["global_train_count"]
+    )
+    return result
 
 
 def load_from_db() -> pd.DataFrame:
     """Load train_delays from Supabase into a pandas DataFrame."""
+    # Keep feature transformations usable in offline training/tests without a
+    # database configuration.  Only data acquisition needs the DB engine.
+    from src.database import engine
+
     print("Loading data from Supabase ...")
     df = pd.read_sql(
         """
